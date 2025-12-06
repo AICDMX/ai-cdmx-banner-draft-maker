@@ -1,0 +1,107 @@
+# Handle speaker photo
+if "SpeakerPhoto" in layers:
+    try:
+        photo_layer = layers["SpeakerPhoto"]
+
+        # Load the photo as a new image using PDB procedure
+        proc = pdb.lookup_procedure("gimp-file-load")
+        if proc:
+            config = proc.create_config()
+            file_obj = Gio.File.new_for_path("{photo_path}")
+            config.set_property("file", file_obj)
+            photo_result = proc.run(config)
+            try:
+                # Extract image from result - it's at index 1 like in template loading
+                photo_image = photo_result.index(1) if hasattr(photo_result, 'index') else photo_result
+            except (IndexError, AttributeError):
+                photo_image = None
+        else:
+            photo_image = None
+    
+    # Get active layer
+    proc = pdb.lookup_procedure("gimp-image-get-active-layer")
+    config = proc.create_config()
+    config.set_property("image", photo_image)
+    drawable_result = proc.run(config)
+    try:
+        photo_drawable = drawable_result.index(0).get_layer() if drawable_result else None
+    except (IndexError, AttributeError):
+        photo_drawable = None
+    
+    # Get the dimensions of the placeholder layer using GIMP 3.0 API
+    placeholder_width = photo_layer.get_width()
+    placeholder_height = photo_layer.get_height()
+    placeholder_x, placeholder_y = photo_layer.get_offsets()
+    
+    # Get photo dimensions
+    photo_width = photo_drawable.get_width()
+    photo_height = photo_drawable.get_height()
+    
+    # Scale the photo to fit the placeholder (maintaining aspect ratio)
+    scale_w = float(placeholder_width) / photo_width
+    scale_h = float(placeholder_height) / photo_height
+    scale = min(scale_w, scale_h)
+    
+    new_width = int(photo_width * scale)
+    new_height = int(photo_height * scale)
+    
+    # Scale image
+    proc = pdb.lookup_procedure("gimp-image-scale")
+    config = proc.create_config()
+    config.set_property("image", photo_image)
+    config.set_property("new-width", new_width)
+    config.set_property("new-height", new_height)
+    proc.run(config)
+    
+    # Get active layer again after scaling
+    proc = pdb.lookup_procedure("gimp-image-get-active-layer")
+    config = proc.create_config()
+    config.set_property("image", photo_image)
+    drawable_result = proc.run(config)
+    try:
+        photo_drawable = drawable_result.index(0).get_layer() if drawable_result else None
+    except (IndexError, AttributeError):
+        photo_drawable = None
+    
+    # Copy the photo layer to the main image
+    proc = pdb.lookup_procedure("gimp-layer-new-from-drawable")
+    config = proc.create_config()
+    config.set_property("drawable", photo_drawable)
+    config.set_property("dest-image", image)
+    layer_result = proc.run(config)
+    try:
+        new_layer = layer_result.index(0).get_layer() if layer_result else None
+    except (IndexError, AttributeError):
+        new_layer = None
+    
+    # Insert layer
+    proc = pdb.lookup_procedure("gimp-image-insert-layer")
+    config = proc.create_config()
+    config.set_property("image", image)
+    config.set_property("layer", new_layer)
+    config.set_property("parent", None)
+    config.set_property("position", 0)
+    proc.run(config)
+    
+    # Position the photo at the placeholder location (centered)
+    offset_x = placeholder_x + (placeholder_width - new_width) // 2
+    offset_y = placeholder_y + (placeholder_height - new_height) // 2
+    
+    proc = pdb.lookup_procedure("gimp-layer-set-offsets")
+    config = proc.create_config()
+    config.set_property("layer", new_layer)
+    config.set_property("x", offset_x)
+    config.set_property("y", offset_y)
+    proc.run(config)
+    
+    # Rename the new layer
+    new_layer.set_name("SpeakerPhoto_Inserted")
+    
+    # Delete the photo image
+    proc = pdb.lookup_procedure("gimp-image-delete")
+    config = proc.create_config()
+    config.set_property("image", photo_image)
+    proc.run(config)
+else:
+    print("Warning: SpeakerPhoto layer not found in template")
+

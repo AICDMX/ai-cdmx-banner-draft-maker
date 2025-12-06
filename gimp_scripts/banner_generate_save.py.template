@@ -1,0 +1,77 @@
+# Save as XCF (with layers intact) using PDB procedure
+try:
+    # Try gimp-xcf-save first (newer GIMP 3.0 native method)
+    proc = pdb.lookup_procedure("gimp-image-save-as")
+    if proc:
+        config = proc.create_config()
+        config.set_property("image", image)
+        file_obj = Gio.File.new_for_path("{output_xcf}")
+        config.set_property("file", file_obj)
+        proc.run(config)
+    else:
+        print("Warning: Could not save XCF file")
+except Exception as e:
+    print(f"Warning: XCF save failed: {{e}}")
+
+# Flatten and save as PNG
+proc = pdb.lookup_procedure("gimp-image-duplicate")
+config = proc.create_config()
+config.set_property("image", image)
+flat_result = proc.run(config)
+try:
+    flat_image = flat_result.index(0).get_image() if flat_result else None
+except (IndexError, AttributeError):
+    flat_image = None
+
+proc = pdb.lookup_procedure("gimp-image-flatten")
+config = proc.create_config()
+config.set_property("image", flat_image)
+proc.run(config)
+
+proc = pdb.lookup_procedure("gimp-image-get-active-layer")
+config = proc.create_config()
+config.set_property("image", flat_image)
+flat_result = proc.run(config)
+try:
+    flat_layer = flat_result.index(0).get_layer() if flat_result else None
+except (IndexError, AttributeError):
+    flat_layer = None
+
+try:
+    proc = pdb.lookup_procedure("file-png-save")
+    if proc:
+        config = proc.create_config()
+        config.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
+        config.set_property("image", flat_image)
+        config.set_property("drawable", flat_layer)
+        file_obj = Gio.File.new_for_path("{output_png}")
+        config.set_property("file", file_obj)
+        config.set_property("compression", 9)
+        proc.run(config)
+    else:
+        print(f"Warning: file-png-save procedure not found, trying alternative methods")
+except Exception as e:
+    print(f"Warning: PNG save failed: {{e}}")
+
+# Clean up
+if flat_image:
+    try:
+        proc = pdb.lookup_procedure("gimp-image-delete")
+        if proc:
+            config = proc.create_config()
+            config.set_property("image", flat_image)
+            proc.run(config)
+    except Exception as e:
+        print(f"Warning: Could not delete flat image: {{e}}")
+
+try:
+    proc = pdb.lookup_procedure("gimp-image-delete")
+    if proc:
+        config = proc.create_config()
+        config.set_property("image", image)
+        proc.run(config)
+except Exception as e:
+    print(f"Warning: Could not delete image: {{e}}")
+
+# Script completed successfully
+

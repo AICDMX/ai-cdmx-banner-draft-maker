@@ -103,7 +103,11 @@ class BannerGeneratorAuto:
         return text or 'banner'
     
     def get_gimp_version(self) -> tuple:
-        """Detect GIMP version by running gimp --version."""
+        """
+        Detect GIMP version by running gimp --version.
+        Returns (major, minor) version tuple.
+        Raises NotImplementedError if GIMP 2.x is detected or version detection fails.
+        """
         try:
             gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
             result = subprocess.run(
@@ -118,10 +122,16 @@ class BannerGeneratorAuto:
                 if match:
                     major = int(match.group(1))
                     minor = int(match.group(2))
+                    # Check if GIMP 2.x is detected
+                    if major < 3:
+                        raise NotImplementedError("GIMP 2.x is not supported")
                     return (major, minor)
+        except NotImplementedError:
+            raise
         except Exception:
             pass
-        return (2, 10)
+        # If version detection fails, raise NotImplementedError
+        raise NotImplementedError("GIMP version detection failed. GIMP 3.0+ is required.")
     
     def build_gimp_command(self, script_file: str) -> list:
         """Build GIMP command for headless batch execution."""
@@ -139,6 +149,11 @@ class BannerGeneratorAuto:
                                speaker_name: str, speaker_title: str, date: str, time: str,
                                photo_path: str, output_xcf: str, output_png: str) -> str:
         """Generate GIMP 3.0 script for updating banner template."""
+        # Check GIMP version and raise error if GIMP 2.x is detected
+        gimp_version = self.get_gimp_version()
+        if gimp_version[0] < 3:
+            raise NotImplementedError("GIMP 2.x is not supported")
+        
         # Use the dedicated script generation function for GIMP 3.0
         return generate_banner_script_gimp3(
             template_path=template_path,
@@ -157,6 +172,11 @@ class BannerGeneratorAuto:
                      speaker_name: str, speaker_title: str, date: str, time: str,
                      photo_path: str, output_xcf: str, output_png: str):
         """Use headless GIMP to update the template with provided values."""
+        # Check GIMP version before proceeding
+        gimp_version = self.get_gimp_version()
+        if gimp_version[0] < 3:
+            raise NotImplementedError("GIMP 2.x is not supported")
+        
         script = self.generate_banner_script(
             template_path, title1, title2, speaker_name, speaker_title,
             date, time, photo_path, output_xcf, output_png

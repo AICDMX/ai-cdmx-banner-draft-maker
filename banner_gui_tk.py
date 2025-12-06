@@ -19,6 +19,26 @@ from typing import Optional
 from gimp_scripts_gimp3 import generate_banner_script_gimp3
 
 
+def load_gimp_template(template_name: str) -> str:
+    """
+    Load a GIMP script template from the gimp_scripts directory.
+    
+    Args:
+        template_name: Name of the template file (e.g., 'banner_generate_main.py.template')
+    
+    Returns:
+        Template content as string
+    """
+    script_dir = Path(__file__).parent / "gimp_scripts"
+    template_path = script_dir / template_name
+    
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+    
+    with open(template_path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
 class BannerGeneratorGUI:
     """Main GUI application for the GIMP banner generator"""
     
@@ -434,7 +454,8 @@ class BannerGeneratorGUI:
     def get_gimp_version(self) -> tuple:
         """
         Detect GIMP version by running gimp --version.
-        Returns (major, minor) version tuple, or (2, 10) as default fallback.
+        Returns (major, minor) version tuple.
+        Raises NotImplementedError if GIMP 2.x is detected or version detection fails.
         """
         try:
             gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
@@ -445,18 +466,23 @@ class BannerGeneratorGUI:
                 timeout=5
             )
             if result.returncode == 0:
-                # Parse version string like "GIMP version 3.0.6" or "GIMP 2.10.34"
+                # Parse version string like "GIMP version 3.0.6"
                 version_output = result.stdout.strip()
                 import re
                 match = re.search(r'(\d+)\.(\d+)', version_output)
                 if match:
                     major = int(match.group(1))
                     minor = int(match.group(2))
+                    # Check if GIMP 2.x is detected
+                    if major < 3:
+                        raise NotImplementedError("GIMP 2.x is not supported")
                     return (major, minor)
+        except NotImplementedError:
+            raise
         except Exception:
             pass
-        # Default to 2.10 if detection fails
-        return (2, 10)
+        # If version detection fails, raise NotImplementedError
+        raise NotImplementedError("GIMP version detection failed. GIMP 3.0+ is required.")
     
     def build_gimp_command(self, script_file: str) -> list:
         """
@@ -595,357 +621,33 @@ class BannerGeneratorGUI:
         is_gimp3 = gimp_version[0] >= 3
         
         if is_gimp3:
-            # GIMP 3.0+ batch scripts: use gi.repository with proper PDB procedure calls
-            script = f'''
-import sys
-import gi
-gi.require_version('Gimp', '3.0')
-from gi.repository import Gimp, Gio
-
-# Get PDB
-pdb = Gimp.get_pdb()
-
-# Load the template using PDB procedure properly
-proc = pdb.lookup_procedure("gimp-file-load")
-config = proc.create_config()
-# Use Gio.File instead of Gimp.File
-file_obj = Gio.File.new_for_path("{escape(template_path)}")
-config.set_property("file", file_obj)
-result = proc.run(config)
-# Extract image from result - result is a Gimp.ValueArray
-# ValueArray has length() method and can be indexed
-try:
-    # In GIMP 3.0, result is a Gimp.Image directly or in a ValueArray
-    if hasattr(result, 'list_layers'):
-        image = result
-    else:
-        image = result.index(0).get_image() if result else None
-except (IndexError, AttributeError):
-    image = None
-
-# Build layer dictionary using GIMP 3.0 API
-layers = {{}}
-if image:
-    for layer in image.get_layers():
-        layers[layer.get_name()] = layer
-
-# Update text layers
-text_fields = {{
-    "Title1": "{escape(title1)}",
-    "Title2": "{escape(title2)}",
-    "SpeakerName": "{escape(speaker_name)}",
-    "SpeakerTitle": "{escape(speaker_title)}",
-    "Date": "{escape(date)}",
-    "Time": "{escape(time)}"
-}}
-
-for layer_name, text_value in text_fields.items():
-    if layer_name in layers:
-        layer = layers[layer_name]
-        # Use PDB procedure to set text
-        try:
-            proc = pdb.lookup_procedure("gimp-text-layer-set-text")
-            if proc:
-                config = proc.create_config()
-                config.set_property("layer", layer)
-                config.set_property("text", text_value)
-                proc.run(config)
-        except Exception as e:
-            print(f"Warning: Could not update layer '{{layer_name}}': {{e}}")
-    else:
-        print("Warning: Layer '{{}}' not found in template".format(layer_name))
-
-'''
+            # Load main template
+            script = load_gimp_template("banner_generate_main.py.template")
+            
+            # Format main template with escaped values
+            script = script.format(
+                template_path=escape(template_path),
+                title1=escape(title1),
+                title2=escape(title2),
+                speaker_name=escape(speaker_name),
+                speaker_title=escape(speaker_title),
+                date=escape(date),
+                time=escape(time)
+            )
+            
             # Add photo handling if photo is provided
             if photo_path:
-                script += f'''
-# Handle speaker photo
-if "SpeakerPhoto" in layers:
-    try:
-        photo_layer = layers["SpeakerPhoto"]
-
-        # Load the photo as a new image using PDB procedure
-        proc = pdb.lookup_procedure("gimp-file-load")
-        if proc:
-            config = proc.create_config()
-            file_obj = Gio.File.new_for_path("{escape(photo_path)}")
-            config.set_property("file", file_obj)
-            photo_result = proc.run(config)
-            try:
-                # Extract image from result - it's at index 1 like in template loading
-                photo_image = photo_result.index(1) if hasattr(photo_result, 'index') else photo_result
-            except (IndexError, AttributeError):
-                photo_image = None
-        else:
-            photo_image = None
-    
-    # Get active layer
-    proc = pdb.lookup_procedure("gimp-image-get-active-layer")
-    config = proc.create_config()
-    config.set_property("image", photo_image)
-    drawable_result = proc.run(config)
-    try:
-        photo_drawable = drawable_result.index(0).get_layer() if drawable_result else None
-    except (IndexError, AttributeError):
-        photo_drawable = None
-    
-    # Get the dimensions of the placeholder layer using GIMP 3.0 API
-    placeholder_width = photo_layer.get_width()
-    placeholder_height = photo_layer.get_height()
-    placeholder_x, placeholder_y = photo_layer.get_offsets()
-    
-    # Get photo dimensions
-    photo_width = photo_drawable.get_width()
-    photo_height = photo_drawable.get_height()
-    
-    # Scale the photo to fit the placeholder (maintaining aspect ratio)
-    scale_w = float(placeholder_width) / photo_width
-    scale_h = float(placeholder_height) / photo_height
-    scale = min(scale_w, scale_h)
-    
-    new_width = int(photo_width * scale)
-    new_height = int(photo_height * scale)
-    
-    # Scale image
-    proc = pdb.lookup_procedure("gimp-image-scale")
-    config = proc.create_config()
-    config.set_property("image", photo_image)
-    config.set_property("new-width", new_width)
-    config.set_property("new-height", new_height)
-    proc.run(config)
-    
-    # Get active layer again after scaling
-    proc = pdb.lookup_procedure("gimp-image-get-active-layer")
-    config = proc.create_config()
-    config.set_property("image", photo_image)
-    drawable_result = proc.run(config)
-    try:
-        photo_drawable = drawable_result.index(0).get_layer() if drawable_result else None
-    except (IndexError, AttributeError):
-        photo_drawable = None
-    
-    # Copy the photo layer to the main image
-    proc = pdb.lookup_procedure("gimp-layer-new-from-drawable")
-    config = proc.create_config()
-    config.set_property("drawable", photo_drawable)
-    config.set_property("dest-image", image)
-    layer_result = proc.run(config)
-    try:
-        new_layer = layer_result.index(0).get_layer() if layer_result else None
-    except (IndexError, AttributeError):
-        new_layer = None
-    
-    # Insert layer
-    proc = pdb.lookup_procedure("gimp-image-insert-layer")
-    config = proc.create_config()
-    config.set_property("image", image)
-    config.set_property("layer", new_layer)
-    config.set_property("parent", None)
-    config.set_property("position", 0)
-    proc.run(config)
-    
-    # Position the photo at the placeholder location (centered)
-    offset_x = placeholder_x + (placeholder_width - new_width) // 2
-    offset_y = placeholder_y + (placeholder_height - new_height) // 2
-    
-    proc = pdb.lookup_procedure("gimp-layer-set-offsets")
-    config = proc.create_config()
-    config.set_property("layer", new_layer)
-    config.set_property("x", offset_x)
-    config.set_property("y", offset_y)
-    proc.run(config)
-    
-    # Rename the new layer
-    new_layer.set_name("SpeakerPhoto_Inserted")
-    
-    # Delete the photo image
-    proc = pdb.lookup_procedure("gimp-image-delete")
-    config = proc.create_config()
-    config.set_property("image", photo_image)
-    proc.run(config)
-else:
-    print("Warning: SpeakerPhoto layer not found in template")
-
-'''
+                photo_template = load_gimp_template("banner_generate_photo.py.template")
+                script += "\n" + photo_template.format(photo_path=escape(photo_path))
             
-            # Save both XCF and PNG
-            script += f'''
-# Save as XCF (with layers intact) using PDB procedure
-try:
-    # Try gimp-xcf-save first (newer GIMP 3.0 native method)
-    proc = pdb.lookup_procedure("gimp-image-save-as")
-    if proc:
-        config = proc.create_config()
-        config.set_property("image", image)
-        file_obj = Gio.File.new_for_path("{escape(output_xcf)}")
-        config.set_property("file", file_obj)
-        proc.run(config)
-    else:
-        print("Warning: Could not save XCF file")
-except Exception as e:
-    print(f"Warning: XCF save failed: {{e}}")
-
-# Flatten and save as PNG
-proc = pdb.lookup_procedure("gimp-image-duplicate")
-config = proc.create_config()
-config.set_property("image", image)
-flat_result = proc.run(config)
-try:
-    flat_image = flat_result.index(0).get_image() if flat_result else None
-except (IndexError, AttributeError):
-    flat_image = None
-
-proc = pdb.lookup_procedure("gimp-image-flatten")
-config = proc.create_config()
-config.set_property("image", flat_image)
-proc.run(config)
-
-proc = pdb.lookup_procedure("gimp-image-get-active-layer")
-config = proc.create_config()
-config.set_property("image", flat_image)
-flat_result = proc.run(config)
-try:
-    flat_layer = flat_result.index(0).get_layer() if flat_result else None
-except (IndexError, AttributeError):
-    flat_layer = None
-
-try:
-    proc = pdb.lookup_procedure("file-png-save")
-    if proc:
-        config = proc.create_config()
-        config.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
-        config.set_property("image", flat_image)
-        config.set_property("drawable", flat_layer)
-        file_obj = Gio.File.new_for_path("{escape(output_png)}")
-        config.set_property("file", file_obj)
-        config.set_property("compression", 9)
-        proc.run(config)
-    else:
-        print(f"Warning: file-png-save procedure not found, trying alternative methods")
-except Exception as e:
-    print(f"Warning: PNG save failed: {{e}}")
-
-# Clean up
-if flat_image:
-    try:
-        proc = pdb.lookup_procedure("gimp-image-delete")
-        if proc:
-            config = proc.create_config()
-            config.set_property("image", flat_image)
-            proc.run(config)
-    except Exception as e:
-        print(f"Warning: Could not delete flat image: {{e}}")
-
-try:
-    proc = pdb.lookup_procedure("gimp-image-delete")
-    if proc:
-        config = proc.create_config()
-        config.set_property("image", image)
-        proc.run(config)
-except Exception as e:
-    print(f"Warning: Could not delete image: {{e}}")
-
-# Script completed successfully
-'''
+            # Add save operations
+            save_template = load_gimp_template("banner_generate_save.py.template")
+            script += "\n" + save_template.format(
+                output_xcf=escape(output_xcf),
+                output_png=escape(output_png)
+            )
         else:
-            # GIMP 2.x uses gimpfu
-            script = f'''
-import sys
-from gimpfu import *
-
-# Load the template
-image = pdb.gimp_file_load("{escape(template_path)}", "{escape(template_path)}")
-
-# Build layer dictionary
-layers = {{}}
-for layer in image.layers:
-    layers[layer.name] = layer
-
-# Update text layers
-text_fields = {{
-    "Title1": "{escape(title1)}",
-    "Title2": "{escape(title2)}",
-    "SpeakerName": "{escape(speaker_name)}",
-    "SpeakerTitle": "{escape(speaker_title)}",
-    "Date": "{escape(date)}",
-    "Time": "{escape(time)}"
-}}
-
-for layer_name, text_value in text_fields.items():
-    if layer_name in layers:
-        pdb.gimp_text_layer_set_text(layers[layer_name], text_value)
-    else:
-        pdb.gimp_message("Warning: Layer '{{}}' not found in template".format(layer_name))
-
-'''
-        
-        # Add photo handling if photo is provided
-        if photo_path:
-            script += f'''
-# Handle speaker photo
-if "SpeakerPhoto" in layers:
-    photo_layer = layers["SpeakerPhoto"]
-    
-    # Load the photo as a new image
-    photo_image = pdb.gimp_file_load("{escape(photo_path)}", "{escape(photo_path)}")
-    photo_drawable = pdb.gimp_image_get_active_layer(photo_image)
-    
-    # Get the dimensions of the placeholder layer
-    placeholder_width = photo_layer.width
-    placeholder_height = photo_layer.height
-    placeholder_x = photo_layer.offsets[0]
-    placeholder_y = photo_layer.offsets[1]
-    
-    # Scale the photo to fit the placeholder (maintaining aspect ratio)
-    photo_width = photo_drawable.width
-    photo_height = photo_drawable.height
-    
-    scale_w = float(placeholder_width) / photo_width
-    scale_h = float(placeholder_height) / photo_height
-    scale = min(scale_w, scale_h)
-    
-    new_width = int(photo_width * scale)
-    new_height = int(photo_height * scale)
-    
-    pdb.gimp_image_scale(photo_image, new_width, new_height)
-    photo_drawable = pdb.gimp_image_get_active_layer(photo_image)
-    
-    # Copy the photo layer to the main image
-    new_layer = pdb.gimp_layer_new_from_drawable(photo_drawable, image)
-    pdb.gimp_image_insert_layer(image, new_layer, None, 0)
-    
-    # Position the photo at the placeholder location (centered)
-    offset_x = placeholder_x + (placeholder_width - new_width) // 2
-    offset_y = placeholder_y + (placeholder_height - new_height) // 2
-    pdb.gimp_layer_set_offsets(new_layer, offset_x, offset_y)
-    
-    # Rename the new layer
-    pdb.gimp_item_set_name(new_layer, "SpeakerPhoto_Inserted")
-    
-    # Delete the photo image
-    pdb.gimp_image_delete(photo_image)
-else:
-    pdb.gimp_message("Warning: SpeakerPhoto layer not found in template")
-
-'''
-        
-            # Save both XCF and PNG
-            script += f'''
-# Save as XCF (with layers intact)
-pdb.gimp_xcf_save(0, image, None, "{escape(output_xcf)}", "{escape(output_xcf)}")
-
-# Flatten and save as PNG
-flat_image = pdb.gimp_image_duplicate(image)
-pdb.gimp_image_flatten(flat_image)
-flat_layer = pdb.gimp_image_get_active_layer(flat_image)
-pdb.file_png_save(flat_image, flat_layer, "{escape(output_png)}", "{escape(output_png)}", 0, 9, 0, 0, 0, 0, 0)
-
-# Clean up
-pdb.gimp_image_delete(flat_image)
-pdb.gimp_image_delete(image)
-
-pdb.gimp_quit(0)
-'''
+            raise NotImplementedError("GIMP 2.x is not supported")
         
         return script
     
@@ -1281,209 +983,54 @@ pdb.gimp_quit(0)
         is_gimp3 = gimp_version[0] >= 3
         
         if is_gimp3:
-            # GIMP 3.0+ uses gi.repository.Gimp
-            # In batch scripts, GIMP is already initialized
-            script = f'''
-import sys
-import gi
-gi.require_version('Gimp', '3.0')
-from gi.repository import Gimp
-
-# Get PDB (GIMP is already initialized in batch mode)
-pdb = Gimp.get_pdb()
-
-# Create new image using PDB
-image = pdb.gimp_image_new({width}, {height}, Gimp.ImageType.RGB)
-
-# Create background layer with a pleasant gradient
-bg_layer = pdb.gimp_layer_new(image, {width}, {height}, RGB_IMAGE, "Background", 100, LAYER_MODE_NORMAL)
-pdb.gimp_image_insert_layer(image, bg_layer, None, 0)
-
-# Fill background with a gradient (white to light blue)
-pdb.gimp_context_set_foreground((255, 255, 255))
-pdb.gimp_context_set_background((230, 240, 255))
-pdb.gimp_drawable_edit_gradient_fill(
-    bg_layer,
-    GRADIENT_LINEAR,
-    0,
-    False,
-    1,
-    0,
-    True,
-    0, 0,
-    {width}, {height}
-)
-
-# Text layer specifications with positions
-# Format: (name, default_text, x, y, font_size)
-text_specs = [
-    ("Title1", "Main Event Title", {width//2}, {height//4}, {int(width * 0.04)}),
-    ("Title2", "Subtitle or Secondary Info", {width//2}, {height//4 + int(height * 0.08)}, {int(width * 0.025)}),
-    ("SpeakerName", "Speaker Name", {width//2}, {height//2 + int(height * 0.15)}, {int(width * 0.035)}),
-    ("SpeakerTitle", "Speaker Title or Affiliation", {width//2}, {height//2 + int(height * 0.22)}, {int(width * 0.02)}),
-    ("Date", "December 31, 2025", {width - int(width * 0.15)}, {height - int(height * 0.12)}, {int(width * 0.025)}),
-    ("Time", "7:00 PM MST", {width - int(width * 0.15)}, {height - int(height * 0.06)}, {int(width * 0.02)})
-]
-
-# Create text layers
-for layer_name, default_text, x, y, font_size in text_specs:
-    # Create text layer using PDB
-    text_layer = pdb.gimp_text_layer_new(image, default_text, "Sans-serif", font_size, Gimp.Unit.PIXEL)
-    pdb.gimp_image_insert_layer(image, text_layer, None, 0)
-    
-    # Set layer name
-    pdb.gimp_item_set_name(text_layer, layer_name)
-    
-    # Center text horizontally (for Title1, Title2, SpeakerName, SpeakerTitle)
-    if layer_name in ["Title1", "Title2", "SpeakerName", "SpeakerTitle"]:
-        text_width = pdb.gimp_drawable_width(text_layer)
-        x_centered = x - text_width // 2
-        pdb.gimp_layer_set_offsets(text_layer, x_centered, y)
-    else:
-        # Right-align for Date and Time
-        text_width = pdb.gimp_drawable_width(text_layer)
-        x_right = x - text_width
-        pdb.gimp_layer_set_offsets(text_layer, x_right, y)
-    
-    # Set text color to dark blue for better visibility
-    pdb.gimp_text_layer_set_color(text_layer, (30, 60, 120))
-
-# Create SpeakerPhoto placeholder layer (a rectangle to show where photo goes)
-photo_size = min(int({width} * 0.25), int({height} * 0.4))
-photo_x = {width//2} - photo_size // 2
-photo_y = {height//2} - int({height} * 0.08)
-
-photo_layer = pdb.gimp_layer_new(image, photo_size, photo_size, Gimp.ImageType.RGBA_IMAGE, "SpeakerPhoto", 50, Gimp.LayerMode.NORMAL)
-pdb.gimp_image_insert_layer(image, photo_layer, None, 0)
-pdb.gimp_layer_set_offsets(photo_layer, photo_x, photo_y)
-
-# Fill photo placeholder with a semi-transparent gray rectangle
-pdb.gimp_context_set_foreground((180, 180, 180))
-pdb.gimp_drawable_fill(photo_layer, Gimp.FillType.FOREGROUND)
-
-# Add a border to the photo placeholder
-pdb.gimp_image_select_rectangle(image, Gimp.ChannelOps.REPLACE, photo_x, photo_y, photo_size, photo_size)
-pdb.gimp_context_set_foreground((100, 100, 100))
-pdb.gimp_edit_stroke(photo_layer, 3)
-pdb.gimp_selection_none(image)
-
-# Add guides for better alignment
-# Horizontal center
-pdb.gimp_image_add_hguide(image, {height//2})
-# Vertical center
-pdb.gimp_image_add_vguide(image, {width//2})
-# Top third
-pdb.gimp_image_add_hguide(image, {height//3})
-# Bottom third
-pdb.gimp_image_add_hguide(image, {2*height//3})
-
-# Save the template using PDB
-pdb.gimp_xcf_save(0, image, None, "{escape(output_path)}", "{escape(output_path)}")
-
-# Clean up
-pdb.gimp_image_delete(image)
-
-# Script completed successfully
-'''
+            # Load template
+            script = load_gimp_template("template_create.py.template")
+            
+            # Calculate all the position values
+            width_center = width // 2
+            height_center = height // 2
+            height_quarter = height // 4
+            height_quarter_plus = height // 4 + int(height * 0.08)
+            height_half_plus = height // 2 + int(height * 0.15)
+            height_half_plus2 = height // 2 + int(height * 0.22)
+            width_right = width - int(width * 0.15)
+            height_bottom1 = height - int(height * 0.12)
+            height_bottom2 = height - int(height * 0.06)
+            height_third = height // 3
+            height_two_thirds = 2 * height // 3
+            
+            font_size_title1 = int(width * 0.04)
+            font_size_title2 = int(width * 0.025)
+            font_size_speaker = int(width * 0.035)
+            font_size_speaker_title = int(width * 0.02)
+            font_size_date = int(width * 0.025)
+            font_size_time = int(width * 0.02)
+            
+            # Format template with all values
+            script = script.format(
+                width=width,
+                height=height,
+                width_center=width_center,
+                height_center=height_center,
+                height_quarter=height_quarter,
+                height_quarter_plus=height_quarter_plus,
+                height_half_plus=height_half_plus,
+                height_half_plus2=height_half_plus2,
+                width_right=width_right,
+                height_bottom1=height_bottom1,
+                height_bottom2=height_bottom2,
+                height_third=height_third,
+                height_two_thirds=height_two_thirds,
+                font_size_title1=font_size_title1,
+                font_size_title2=font_size_title2,
+                font_size_speaker=font_size_speaker,
+                font_size_speaker_title=font_size_speaker_title,
+                font_size_date=font_size_date,
+                font_size_time=font_size_time,
+                output_path=escape(output_path)
+            )
         else:
-            # GIMP 2.x uses gimpfu
-            script = f'''
-import sys
-from gimpfu import *
-
-# Create new image
-image = pdb.gimp_image_new({width}, {height}, RGB)
-
-# Create background layer with a pleasant gradient
-bg_layer = pdb.gimp_layer_new(image, {width}, {height}, RGB_IMAGE, "Background", 100, LAYER_MODE_NORMAL)
-pdb.gimp_image_insert_layer(image, bg_layer, None, 0)
-
-# Fill background with a gradient (white to light blue)
-pdb.gimp_context_set_foreground((255, 255, 255))
-pdb.gimp_context_set_background((230, 240, 255))
-pdb.gimp_drawable_edit_gradient_fill(
-    bg_layer,
-    GRADIENT_LINEAR,
-    0,
-    False,
-    1,
-    0,
-    True,
-    0, 0,
-    {width}, {height}
-)
-
-# Text layer specifications with positions
-# Format: (name, default_text, x, y, font_size)
-text_specs = [
-    ("Title1", "Main Event Title", {width//2}, {height//4}, {int(width * 0.04)}),
-    ("Title2", "Subtitle or Secondary Info", {width//2}, {height//4 + int(height * 0.08)}, {int(width * 0.025)}),
-    ("SpeakerName", "Speaker Name", {width//2}, {height//2 + int(height * 0.15)}, {int(width * 0.035)}),
-    ("SpeakerTitle", "Speaker Title or Affiliation", {width//2}, {height//2 + int(height * 0.22)}, {int(width * 0.02)}),
-    ("Date", "December 31, 2025", {width - int(width * 0.15)}, {height - int(height * 0.12)}, {int(width * 0.025)}),
-    ("Time", "7:00 PM MST", {width - int(width * 0.15)}, {height - int(height * 0.06)}, {int(width * 0.02)})
-]
-
-# Create text layers
-for layer_name, default_text, x, y, font_size in text_specs:
-    # Create text layer
-    text_layer = pdb.gimp_text_layer_new(image, default_text, "Sans-serif", font_size, PIXELS)
-    pdb.gimp_image_insert_layer(image, text_layer, None, 0)
-    
-    # Set layer name
-    pdb.gimp_item_set_name(text_layer, layer_name)
-    
-    # Center text horizontally (for Title1, Title2, SpeakerName, SpeakerTitle)
-    if layer_name in ["Title1", "Title2", "SpeakerName", "SpeakerTitle"]:
-        text_width = pdb.gimp_drawable_width(text_layer)
-        x_centered = x - text_width // 2
-        pdb.gimp_layer_set_offsets(text_layer, x_centered, y)
-    else:
-        # Right-align for Date and Time
-        text_width = pdb.gimp_drawable_width(text_layer)
-        x_right = x - text_width
-        pdb.gimp_layer_set_offsets(text_layer, x_right, y)
-    
-    # Set text color to dark blue for better visibility
-    pdb.gimp_text_layer_set_color(text_layer, (30, 60, 120))
-
-# Create SpeakerPhoto placeholder layer (a rectangle to show where photo goes)
-photo_size = min(int(width * 0.25), int(height * 0.4))
-photo_x = {width//2 - photo_size//2}
-photo_y = {height//2 - int(height * 0.08)}
-
-photo_layer = pdb.gimp_layer_new(image, photo_size, photo_size, RGBA_IMAGE, "SpeakerPhoto", 50, LAYER_MODE_NORMAL)
-pdb.gimp_image_insert_layer(image, photo_layer, None, 0)
-pdb.gimp_layer_set_offsets(photo_layer, photo_x, photo_y)
-
-# Fill photo placeholder with a semi-transparent gray rectangle
-pdb.gimp_context_set_foreground((180, 180, 180))
-pdb.gimp_drawable_fill(photo_layer, FILL_FOREGROUND)
-
-# Add a border to the photo placeholder
-pdb.gimp_image_select_rectangle(image, CHANNEL_OP_REPLACE, photo_x, photo_y, photo_size, photo_size)
-pdb.gimp_context_set_foreground((100, 100, 100))
-pdb.gimp_edit_stroke(photo_layer, 3)
-pdb.gimp_selection_none(image)
-
-# Add guides for better alignment
-# Horizontal center
-pdb.gimp_image_add_hguide(image, {height//2})
-# Vertical center
-pdb.gimp_image_add_vguide(image, {width//2})
-# Top third
-pdb.gimp_image_add_hguide(image, {height//3})
-# Bottom third
-pdb.gimp_image_add_hguide(image, {2*height//3})
-
-# Save the template
-pdb.gimp_xcf_save(0, image, None, "{escape(output_path)}", "{escape(output_path)}")
-
-# Clean up
-pdb.gimp_image_delete(image)
-
-pdb.gimp_quit(0)
-'''
+            raise NotImplementedError("GIMP 2.x is not supported for template generation")
         
         return script
     

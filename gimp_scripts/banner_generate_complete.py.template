@@ -1,0 +1,140 @@
+import sys
+import gi
+gi.require_version('Gimp', '3.0')
+from gi.repository import Gimp, Gio
+
+pdb = Gimp.get_pdb()
+
+# Load template
+try:
+    proc = pdb.lookup_procedure("gimp-file-load")
+    config = proc.create_config()
+    file_obj = Gio.File.new_for_path("{template_path}")
+    config.set_property("file", file_obj)
+    result = proc.run(config)
+
+    # Extract image from ValueArray (status at index 0, image at index 1)
+    image = result.index(1) if hasattr(result, 'index') else result
+except Exception as e:
+    print(f"Error loading template: {{e}}")
+    image = None
+
+# Build layer dictionary
+layers = {{}}
+if image:
+    try:
+        for layer in image.get_layers():
+            layers[layer.get_name()] = layer
+    except Exception as e:
+        print(f"Error listing layers: {{e}}")
+
+# Update text layers
+text_fields = {{
+    "Title1": "{title1}",
+    "Title2": "{title2}",
+    "SpeakerName": "{speaker_name}",
+    "SpeakerTitle": "{speaker_title}",
+    "Date": "{date}",
+    "Time": "{time}"
+}}
+
+for layer_name, text_value in text_fields.items():
+    if layer_name in layers:
+        try:
+            proc = pdb.lookup_procedure("gimp-text-layer-set-text")
+            if proc:
+                config = proc.create_config()
+                config.set_property("layer", layers[layer_name])
+                config.set_property("text", text_value)
+                proc.run(config)
+        except Exception as e:
+            print(f"Warning: Could not update layer '{{layer_name}}': {{e}}")
+    else:
+        print(f"Warning: Layer '{{layer_name}}' not found in template")
+
+# Save as XCF
+if image:
+    try:
+        # Try multiple save procedures
+        proc = (pdb.lookup_procedure("gimp-image-save-as") or
+                pdb.lookup_procedure("gimp-xcf-save") or
+                pdb.lookup_procedure("file-xcf-save"))
+
+        if proc:
+            config = proc.create_config()
+            config.set_property("image", image)
+            file_obj = Gio.File.new_for_path("{output_xcf}")
+            config.set_property("file", file_obj)
+            proc.run(config)
+    except Exception as e:
+        print(f"Warning: XCF save failed: {{e}}")
+
+# Flatten and save as PNG
+if image:
+    try:
+        proc = pdb.lookup_procedure("gimp-image-duplicate")
+        if proc:
+            config = proc.create_config()
+            config.set_property("image", image)
+            result = proc.run(config)
+
+            # Extract duplicated image
+            flat_image = result.index(1) if hasattr(result, 'index') else result
+
+            # Flatten
+            proc = pdb.lookup_procedure("gimp-image-flatten")
+            if proc and flat_image:
+                config = proc.create_config()
+                config.set_property("image", flat_image)
+                proc.run(config)
+
+                # Get active layer
+                proc = pdb.lookup_procedure("gimp-image-get-active-layer")
+                if proc:
+                    config = proc.create_config()
+                    config.set_property("image", flat_image)
+                    result = proc.run(config)
+                    try:
+                        flat_layer = result.index(1) if hasattr(result, 'index') else result
+                    except:
+                        flat_layer = None
+
+                    # Save as PNG
+                    if flat_layer:
+                        proc = (pdb.lookup_procedure("file-png-save") or
+                                pdb.lookup_procedure("gimp-image-export-as"))
+
+                        if proc:
+                            config = proc.create_config()
+                            config.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
+                            config.set_property("image", flat_image)
+                            file_obj = Gio.File.new_for_path("{output_png}")
+                            config.set_property("file", file_obj)
+                            try:
+                                config.set_property("compression", 9)
+                            except:
+                                pass
+                            proc.run(config)
+
+                # Clean up flat image
+                try:
+                    proc = pdb.lookup_procedure("gimp-image-delete")
+                    if proc:
+                        config = proc.create_config()
+                        config.set_property("image", flat_image)
+                        proc.run(config)
+                except:
+                    pass
+    except Exception as e:
+        print(f"Warning: PNG save failed: {{e}}")
+
+# Clean up original image
+try:
+    proc = pdb.lookup_procedure("gimp-image-delete")
+    if proc and image:
+        config = proc.create_config()
+        config.set_property("image", image)
+        proc.run(config)
+except:
+    pass
+

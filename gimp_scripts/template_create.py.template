@@ -1,0 +1,101 @@
+import sys
+import gi
+gi.require_version('Gimp', '3.0')
+from gi.repository import Gimp
+
+# Get PDB (GIMP is already initialized in batch mode)
+pdb = Gimp.get_pdb()
+
+# Create new image using PDB
+image = pdb.gimp_image_new({width}, {height}, Gimp.ImageType.RGB)
+
+# Create background layer with a pleasant gradient
+bg_layer = pdb.gimp_layer_new(image, {width}, {height}, RGB_IMAGE, "Background", 100, LAYER_MODE_NORMAL)
+pdb.gimp_image_insert_layer(image, bg_layer, None, 0)
+
+# Fill background with a gradient (white to light blue)
+pdb.gimp_context_set_foreground((255, 255, 255))
+pdb.gimp_context_set_background((230, 240, 255))
+pdb.gimp_drawable_edit_gradient_fill(
+    bg_layer,
+    GRADIENT_LINEAR,
+    0,
+    False,
+    1,
+    0,
+    True,
+    0, 0,
+    {width}, {height}
+)
+
+# Text layer specifications with positions
+# Format: (name, default_text, x, y, font_size)
+text_specs = [
+    ("Title1", "Main Event Title", {width_center}, {height_quarter}, {font_size_title1}),
+    ("Title2", "Subtitle or Secondary Info", {width_center}, {height_quarter_plus}, {font_size_title2}),
+    ("SpeakerName", "Speaker Name", {width_center}, {height_half_plus}, {font_size_speaker}),
+    ("SpeakerTitle", "Speaker Title or Affiliation", {width_center}, {height_half_plus2}, {font_size_speaker_title}),
+    ("Date", "December 31, 2025", {width_right}, {height_bottom1}, {font_size_date}),
+    ("Time", "7:00 PM MST", {width_right}, {height_bottom2}, {font_size_time})
+]
+
+# Create text layers
+for layer_name, default_text, x, y, font_size in text_specs:
+    # Create text layer using PDB
+    text_layer = pdb.gimp_text_layer_new(image, default_text, "Sans-serif", font_size, Gimp.Unit.PIXEL)
+    pdb.gimp_image_insert_layer(image, text_layer, None, 0)
+    
+    # Set layer name
+    pdb.gimp_item_set_name(text_layer, layer_name)
+    
+    # Center text horizontally (for Title1, Title2, SpeakerName, SpeakerTitle)
+    if layer_name in ["Title1", "Title2", "SpeakerName", "SpeakerTitle"]:
+        text_width = pdb.gimp_drawable_width(text_layer)
+        x_centered = x - text_width // 2
+        pdb.gimp_layer_set_offsets(text_layer, x_centered, y)
+    else:
+        # Right-align for Date and Time
+        text_width = pdb.gimp_drawable_width(text_layer)
+        x_right = x - text_width
+        pdb.gimp_layer_set_offsets(text_layer, x_right, y)
+    
+    # Set text color to dark blue for better visibility
+    pdb.gimp_text_layer_set_color(text_layer, (30, 60, 120))
+
+# Create SpeakerPhoto placeholder layer (a rectangle to show where photo goes)
+photo_size = min(int({width} * 0.25), int({height} * 0.4))
+photo_x = {width_center} - photo_size // 2
+photo_y = {height_center} - int({height} * 0.08)
+
+photo_layer = pdb.gimp_layer_new(image, photo_size, photo_size, Gimp.ImageType.RGBA_IMAGE, "SpeakerPhoto", 50, Gimp.LayerMode.NORMAL)
+pdb.gimp_image_insert_layer(image, photo_layer, None, 0)
+pdb.gimp_layer_set_offsets(photo_layer, photo_x, photo_y)
+
+# Fill photo placeholder with a semi-transparent gray rectangle
+pdb.gimp_context_set_foreground((180, 180, 180))
+pdb.gimp_drawable_fill(photo_layer, Gimp.FillType.FOREGROUND)
+
+# Add a border to the photo placeholder
+pdb.gimp_image_select_rectangle(image, Gimp.ChannelOps.REPLACE, photo_x, photo_y, photo_size, photo_size)
+pdb.gimp_context_set_foreground((100, 100, 100))
+pdb.gimp_edit_stroke(photo_layer, 3)
+pdb.gimp_selection_none(image)
+
+# Add guides for better alignment
+# Horizontal center
+pdb.gimp_image_add_hguide(image, {height_center})
+# Vertical center
+pdb.gimp_image_add_vguide(image, {width_center})
+# Top third
+pdb.gimp_image_add_hguide(image, {height_third})
+# Bottom third
+pdb.gimp_image_add_hguide(image, {height_two_thirds})
+
+# Save the template using PDB
+pdb.gimp_xcf_save(0, image, None, "{output_path}", "{output_path}")
+
+# Clean up
+pdb.gimp_image_delete(image)
+
+# Script completed successfully
+

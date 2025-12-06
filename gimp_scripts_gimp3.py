@@ -5,9 +5,32 @@ Generates Python scripts for GIMP 3.0 to handle banner image manipulation.
 This module separates the complex script generation logic from the GUI.
 """
 
+from pathlib import Path
+
+
 def escape_string(s):
     """Escape a string for use in Python f-strings."""
     return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+
+
+def load_gimp_template(template_name: str) -> str:
+    """
+    Load a GIMP script template from the gimp_scripts directory.
+    
+    Args:
+        template_name: Name of the template file (e.g., 'banner_generate_complete.py.template')
+    
+    Returns:
+        Template content as string
+    """
+    script_dir = Path(__file__).parent / "gimp_scripts"
+    template_path = script_dir / template_name
+    
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+    
+    with open(template_path, 'r', encoding='utf-8') as f:
+        return f.read()
 
 
 def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
@@ -31,147 +54,20 @@ def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
     Returns:
         Python script string for GIMP 3.0
     """
-
-    # Create the base script
-    script = f'''import sys
-import gi
-gi.require_version('Gimp', '3.0')
-from gi.repository import Gimp, Gio
-
-pdb = Gimp.get_pdb()
-
-# Load template
-try:
-    proc = pdb.lookup_procedure("gimp-file-load")
-    config = proc.create_config()
-    file_obj = Gio.File.new_for_path("{escape_string(template_path)}")
-    config.set_property("file", file_obj)
-    result = proc.run(config)
-
-    # Extract image from ValueArray (status at index 0, image at index 1)
-    image = result.index(1) if hasattr(result, 'index') else result
-except Exception as e:
-    print(f"Error loading template: {{e}}")
-    image = None
-
-# Build layer dictionary
-layers = {{}}
-if image:
-    try:
-        for layer in image.get_layers():
-            layers[layer.get_name()] = layer
-    except Exception as e:
-        print(f"Error listing layers: {{e}}")
-
-# Update text layers
-text_fields = {{
-    "Title1": "{escape_string(title1)}",
-    "Title2": "{escape_string(title2)}",
-    "SpeakerName": "{escape_string(speaker_name)}",
-    "SpeakerTitle": "{escape_string(speaker_title)}",
-    "Date": "{escape_string(date)}",
-    "Time": "{escape_string(time)}"
-}}
-
-for layer_name, text_value in text_fields.items():
-    if layer_name in layers:
-        try:
-            proc = pdb.lookup_procedure("gimp-text-layer-set-text")
-            if proc:
-                config = proc.create_config()
-                config.set_property("layer", layers[layer_name])
-                config.set_property("text", text_value)
-                proc.run(config)
-        except Exception as e:
-            print(f"Warning: Could not update layer '{{layer_name}}': {{e}}")
-    else:
-        print(f"Warning: Layer '{{layer_name}}' not found in template")
-
-# Save as XCF
-if image:
-    try:
-        # Try multiple save procedures
-        proc = pdb.lookup_procedure("gimp-image-save-as") or \\
-               pdb.lookup_procedure("gimp-xcf-save") or \\
-               pdb.lookup_procedure("file-xcf-save")
-
-        if proc:
-            config = proc.create_config()
-            config.set_property("image", image)
-            file_obj = Gio.File.new_for_path("{escape_string(output_xcf)}")
-            config.set_property("file", file_obj)
-            proc.run(config)
-    except Exception as e:
-        print(f"Warning: XCF save failed: {{e}}")
-
-# Flatten and save as PNG
-if image:
-    try:
-        proc = pdb.lookup_procedure("gimp-image-duplicate")
-        if proc:
-            config = proc.create_config()
-            config.set_property("image", image)
-            result = proc.run(config)
-
-            # Extract duplicated image
-            flat_image = result.index(1) if hasattr(result, 'index') else result
-
-            # Flatten
-            proc = pdb.lookup_procedure("gimp-image-flatten")
-            if proc and flat_image:
-                config = proc.create_config()
-                config.set_property("image", flat_image)
-                proc.run(config)
-
-                # Get active layer
-                proc = pdb.lookup_procedure("gimp-image-get-active-layer")
-                if proc:
-                    config = proc.create_config()
-                    config.set_property("image", flat_image)
-                    result = proc.run(config)
-                    try:
-                        flat_layer = result.index(1) if hasattr(result, 'index') else result
-                    except:
-                        flat_layer = None
-
-                    # Save as PNG
-                    if flat_layer:
-                        proc = pdb.lookup_procedure("file-png-save") or \\
-                               pdb.lookup_procedure("gimp-image-export-as")
-
-                        if proc:
-                            config = proc.create_config()
-                            config.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
-                            config.set_property("image", flat_image)
-                            file_obj = Gio.File.new_for_path("{escape_string(output_png)}")
-                            config.set_property("file", file_obj)
-                            try:
-                                config.set_property("compression", 9)
-                            except:
-                                pass
-                            proc.run(config)
-
-                # Clean up flat image
-                try:
-                    proc = pdb.lookup_procedure("gimp-image-delete")
-                    if proc:
-                        config = proc.create_config()
-                        config.set_property("image", flat_image)
-                        proc.run(config)
-                except:
-                    pass
-    except Exception as e:
-        print(f"Warning: PNG save failed: {{e}}")
-
-# Clean up original image
-try:
-    proc = pdb.lookup_procedure("gimp-image-delete")
-    if proc and image:
-        config = proc.create_config()
-        config.set_property("image", image)
-        proc.run(config)
-except:
-    pass
-'''
-
+    # Load the template
+    script = load_gimp_template("banner_generate_complete.py.template")
+    
+    # Format the template with escaped values
+    script = script.format(
+        template_path=escape_string(template_path),
+        title1=escape_string(title1),
+        title2=escape_string(title2),
+        speaker_name=escape_string(speaker_name),
+        speaker_title=escape_string(speaker_title),
+        date=escape_string(date),
+        time=escape_string(time),
+        output_xcf=escape_string(output_xcf),
+        output_png=escape_string(output_png)
+    )
+    
     return script

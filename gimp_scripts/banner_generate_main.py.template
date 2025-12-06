@@ -1,0 +1,58 @@
+import sys
+import gi
+gi.require_version('Gimp', '3.0')
+from gi.repository import Gimp, Gio
+
+# Get PDB
+pdb = Gimp.get_pdb()
+
+# Load the template using PDB procedure properly
+proc = pdb.lookup_procedure("gimp-file-load")
+config = proc.create_config()
+# Use Gio.File instead of Gimp.File
+file_obj = Gio.File.new_for_path("{template_path}")
+config.set_property("file", file_obj)
+result = proc.run(config)
+# Extract image from result - result is a Gimp.ValueArray
+# ValueArray has length() method and can be indexed
+try:
+    # In GIMP 3.0, result is a Gimp.Image directly or in a ValueArray
+    if hasattr(result, 'list_layers'):
+        image = result
+    else:
+        image = result.index(0).get_image() if result else None
+except (IndexError, AttributeError):
+    image = None
+
+# Build layer dictionary using GIMP 3.0 API
+layers = {{}}
+if image:
+    for layer in image.get_layers():
+        layers[layer.get_name()] = layer
+
+# Update text layers
+text_fields = {{
+    "Title1": "{title1}",
+    "Title2": "{title2}",
+    "SpeakerName": "{speaker_name}",
+    "SpeakerTitle": "{speaker_title}",
+    "Date": "{date}",
+    "Time": "{time}"
+}}
+
+for layer_name, text_value in text_fields.items():
+    if layer_name in layers:
+        layer = layers[layer_name]
+        # Use PDB procedure to set text
+        try:
+            proc = pdb.lookup_procedure("gimp-text-layer-set-text")
+            if proc:
+                config = proc.create_config()
+                config.set_property("layer", layer)
+                config.set_property("text", text_value)
+                proc.run(config)
+        except Exception as e:
+            print(f"Warning: Could not update layer '{{layer_name}}': {{e}}")
+    else:
+        print("Warning: Layer '{{}}' not found in template".format(layer_name))
+
