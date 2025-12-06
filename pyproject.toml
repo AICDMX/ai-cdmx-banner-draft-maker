@@ -1,0 +1,11 @@
+[project]
+name = "gimp-banner-generator"
+version = "0.1.0"
+description = "GUI tool for generating event banners from GIMP templates"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+banner-gui = "banner_gui:main"
+
