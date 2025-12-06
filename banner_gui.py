@@ -58,6 +58,13 @@ class BannerGeneratorGUI:
             row=row, column=2, padx=(5, 0), pady=(0, 5))
         row += 1
         
+        # Template Creation Button
+        ttk.Button(main_frame, text="Create New Template", 
+                  command=self.create_new_template,
+                  style='Accent.TButton').grid(
+            row=row, column=0, columnspan=3, pady=(10, 10), sticky=(tk.W, tk.E))
+        row += 1
+        
         # Output Directory Section
         ttk.Label(main_frame, text="Output Directory:", font=('', 10, 'bold')).grid(
             row=row, column=0, sticky=tk.W, pady=(10, 5))
@@ -478,6 +485,264 @@ pdb.gimp_quit(0)
             self.output_dir_var.set(self.last_output_dir)
         if self.last_time:
             self.time_entry.insert(0, self.last_time)
+    
+    def create_new_template(self):
+        """Create a new blank template with properly named layers"""
+        # Check if template directory is set
+        template_dir = self.template_dir_var.get()
+        if not template_dir:
+            messagebox.showerror("Error", "Please select a template directory first")
+            return
+        
+        if not os.path.isdir(template_dir):
+            messagebox.showerror("Error", f"Template directory does not exist: {template_dir}")
+            return
+        
+        # Create a dialog for template creation
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Create New Template")
+        dialog.geometry("500x450")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Template name
+        ttk.Label(dialog, text="Template Name:", font=('', 10, 'bold')).grid(
+            row=0, column=0, sticky=tk.W, padx=10, pady=(10, 5))
+        
+        name_var = tk.StringVar()
+        name_entry = ttk.Entry(dialog, textvariable=name_var, width=40)
+        name_entry.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), padx=10, pady=(0, 10))
+        
+        # Dimension presets
+        ttk.Label(dialog, text="Choose Dimensions:", font=('', 10, 'bold')).grid(
+            row=2, column=0, sticky=tk.W, padx=10, pady=(10, 5))
+        
+        dimension_var = tk.StringVar(value="1920x1080")
+        
+        presets = [
+            ("1920x1080", "1920x1080 (Full HD - Facebook Event, YouTube Thumbnail)"),
+            ("1200x628", "1200x628 (Facebook/LinkedIn Post)"),
+            ("1080x1080", "1080x1080 (Instagram Square)"),
+            ("1080x1920", "1080x1920 (Instagram Story/Reel)"),
+            ("1200x675", "1200x675 (Twitter/X Post)"),
+            ("1280x720", "1280x720 (HD - Web Banner)"),
+            ("custom", "Custom Dimensions")
+        ]
+        
+        for i, (value, label) in enumerate(presets):
+            ttk.Radiobutton(dialog, text=label, variable=dimension_var, 
+                           value=value).grid(row=3+i, column=0, sticky=tk.W, padx=20, pady=2)
+        
+        # Custom dimension fields
+        ttk.Label(dialog, text="Custom Width:").grid(
+            row=10, column=0, sticky=tk.W, padx=30, pady=(5, 0))
+        custom_width_var = tk.StringVar(value="1920")
+        custom_width_entry = ttk.Entry(dialog, textvariable=custom_width_var, width=15)
+        custom_width_entry.grid(row=10, column=1, sticky=tk.W, padx=10, pady=(5, 0))
+        
+        ttk.Label(dialog, text="Custom Height:").grid(
+            row=11, column=0, sticky=tk.W, padx=30, pady=(5, 10))
+        custom_height_var = tk.StringVar(value="1080")
+        custom_height_entry = ttk.Entry(dialog, textvariable=custom_height_var, width=15)
+        custom_height_entry.grid(row=11, column=1, sticky=tk.W, padx=10, pady=(5, 10))
+        
+        def on_create():
+            """Handle template creation"""
+            template_name = name_var.get().strip()
+            if not template_name:
+                messagebox.showerror("Error", "Please enter a template name", parent=dialog)
+                return
+            
+            # Add .xcf extension if not present
+            if not template_name.endswith('.xcf'):
+                template_name += '.xcf'
+            
+            # Get dimensions
+            dimension_choice = dimension_var.get()
+            if dimension_choice == "custom":
+                try:
+                    width = int(custom_width_var.get())
+                    height = int(custom_height_var.get())
+                    if width <= 0 or height <= 0:
+                        raise ValueError("Dimensions must be positive")
+                except ValueError as e:
+                    messagebox.showerror("Error", f"Invalid custom dimensions: {e}", parent=dialog)
+                    return
+            else:
+                width, height = map(int, dimension_choice.split('x'))
+            
+            # Full path to template
+            template_path = os.path.join(template_dir, template_name)
+            
+            # Check if file already exists
+            if os.path.exists(template_path):
+                if not messagebox.askyesno("File Exists", 
+                                          f"Template '{template_name}' already exists. Overwrite?",
+                                          parent=dialog):
+                    return
+            
+            try:
+                self.generate_template_file(template_path, width, height)
+                dialog.destroy()
+                messagebox.showinfo(
+                    "Success", 
+                    f"Template '{template_name}' created successfully!\n\n"
+                    f"Dimensions: {width}x{height}\n"
+                    f"Location: {template_path}\n\n"
+                    f"Opening in GIMP for customization..."
+                )
+                # Refresh template list
+                self.refresh_templates()
+                # Open in GIMP for editing
+                subprocess.Popen(['gimp', template_path])
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to create template: {e}", parent=dialog)
+        
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.grid(row=12, column=0, columnspan=2, pady=(20, 10))
+        
+        ttk.Button(button_frame, text="Create Template", command=on_create).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        # Configure grid weights
+        dialog.columnconfigure(0, weight=1)
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+    
+    def generate_template_file(self, output_path: str, width: int, height: int):
+        """
+        Generate a blank GIMP template with properly named layers.
+        Uses headless GIMP to create the template.
+        """
+        # Escape strings for Python script
+        def escape(s):
+            return s.replace('\\', '\\\\').replace('"', '\\"')
+        
+        # Build the Python-Fu script to create template
+        script = f'''
+import sys
+from gimpfu import *
+
+# Create new image
+image = pdb.gimp_image_new({width}, {height}, RGB)
+
+# Create background layer with a pleasant gradient
+bg_layer = pdb.gimp_layer_new(image, {width}, {height}, RGB_IMAGE, "Background", 100, LAYER_MODE_NORMAL)
+pdb.gimp_image_insert_layer(image, bg_layer, None, 0)
+
+# Fill background with a gradient (white to light blue)
+pdb.gimp_context_set_foreground((255, 255, 255))
+pdb.gimp_context_set_background((230, 240, 255))
+pdb.gimp_drawable_edit_gradient_fill(
+    bg_layer,
+    GRADIENT_LINEAR,
+    0,
+    False,
+    1,
+    0,
+    True,
+    0, 0,
+    {width}, {height}
+)
+
+# Text layer specifications with positions
+# Format: (name, default_text, x, y, font_size)
+text_specs = [
+    ("Title1", "Main Event Title", {width//2}, {height//4}, {int(width * 0.04)}),
+    ("Title2", "Subtitle or Secondary Info", {width//2}, {height//4 + int(height * 0.08)}, {int(width * 0.025)}),
+    ("SpeakerName", "Speaker Name", {width//2}, {height//2 + int(height * 0.15)}, {int(width * 0.035)}),
+    ("SpeakerTitle", "Speaker Title or Affiliation", {width//2}, {height//2 + int(height * 0.22)}, {int(width * 0.02)}),
+    ("Date", "December 31, 2025", {width - int(width * 0.15)}, {height - int(height * 0.12)}, {int(width * 0.025)}),
+    ("Time", "7:00 PM MST", {width - int(width * 0.15)}, {height - int(height * 0.06)}, {int(width * 0.02)})
+]
+
+# Create text layers
+for layer_name, default_text, x, y, font_size in text_specs:
+    # Create text layer
+    text_layer = pdb.gimp_text_layer_new(image, default_text, "Sans-serif", font_size, PIXELS)
+    pdb.gimp_image_insert_layer(image, text_layer, None, 0)
+    
+    # Set layer name
+    pdb.gimp_item_set_name(text_layer, layer_name)
+    
+    # Center text horizontally (for Title1, Title2, SpeakerName, SpeakerTitle)
+    if layer_name in ["Title1", "Title2", "SpeakerName", "SpeakerTitle"]:
+        text_width = pdb.gimp_drawable_width(text_layer)
+        x_centered = x - text_width // 2
+        pdb.gimp_layer_set_offsets(text_layer, x_centered, y)
+    else:
+        # Right-align for Date and Time
+        text_width = pdb.gimp_drawable_width(text_layer)
+        x_right = x - text_width
+        pdb.gimp_layer_set_offsets(text_layer, x_right, y)
+    
+    # Set text color to dark blue for better visibility
+    pdb.gimp_text_layer_set_color(text_layer, (30, 60, 120))
+
+# Create SpeakerPhoto placeholder layer (a rectangle to show where photo goes)
+photo_size = min(int(width * 0.25), int(height * 0.4))
+photo_x = {width//2 - photo_size//2}
+photo_y = {height//2 - int(height * 0.08)}
+
+photo_layer = pdb.gimp_layer_new(image, photo_size, photo_size, RGBA_IMAGE, "SpeakerPhoto", 50, LAYER_MODE_NORMAL)
+pdb.gimp_image_insert_layer(image, photo_layer, None, 0)
+pdb.gimp_layer_set_offsets(photo_layer, photo_x, photo_y)
+
+# Fill photo placeholder with a semi-transparent gray rectangle
+pdb.gimp_context_set_foreground((180, 180, 180))
+pdb.gimp_drawable_fill(photo_layer, FILL_FOREGROUND)
+
+# Add a border to the photo placeholder
+pdb.gimp_image_select_rectangle(image, CHANNEL_OP_REPLACE, photo_x, photo_y, photo_size, photo_size)
+pdb.gimp_context_set_foreground((100, 100, 100))
+pdb.gimp_edit_stroke(photo_layer, 3)
+pdb.gimp_selection_none(image)
+
+# Add guides for better alignment
+# Horizontal center
+pdb.gimp_image_add_hguide(image, {height//2})
+# Vertical center
+pdb.gimp_image_add_vguide(image, {width//2})
+# Top third
+pdb.gimp_image_add_hguide(image, {height//3})
+# Bottom third
+pdb.gimp_image_add_hguide(image, {2*height//3})
+
+# Save the template
+pdb.gimp_xcf_save(0, image, None, "{escape(output_path)}", "{escape(output_path)}")
+
+# Clean up
+pdb.gimp_image_delete(image)
+
+pdb.gimp_quit(0)
+'''
+        
+        # Write script to a temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            script_file = f.name
+            f.write(script)
+        
+        try:
+            # Run GIMP in batch mode
+            result = subprocess.run(
+                ['gimp', '-i', '--batch-interpreter', 'python-fu-eval', '-b', f'exec(open("{script_file}").read())'],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30
+            )
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(script_file)
+            except:
+                pass
 
 
 def main():
