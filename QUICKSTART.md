@@ -10,11 +10,11 @@
 
 2. **Run the tool:**
    ```bash
-   uv run banner_gui.py
-   ```
-   Or without uv:
-   ```bash
    python3 banner_gui.py
+   ```
+   Or using the Makefile:
+   ```bash
+   make run
    ```
 
 ## Creating Your First Template
@@ -49,7 +49,7 @@ Create a simple test template to verify everything works:
 
 ## Generating Your First Banner
 
-1. Launch the tool: `uv run banner_gui.py`
+1. Launch the tool: `python3 banner_gui.py` (or `make run`)
 2. Browse to your templates directory
 3. Select your template from the list
 4. Browse to your output directory (e.g., `~/output/`)

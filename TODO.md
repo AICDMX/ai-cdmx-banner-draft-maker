@@ -23,30 +23,6 @@ This document tracks planned improvements and features for the GIMP Banner Gener
 - **Benefits**: Users don't need Python installed; just download and run
 
 ### 3. Template Generator Function ✅ COMPLETED
-- **Goal**: Create a tool to generate blank templates with properly named layers
-- **Implementation**:
-  - ✅ Added "Create New Template" button in GUI
-  - ✅ Created dialog with template dimension presets:
-    - 1920x1080 (Full HD - Facebook Event, YouTube Thumbnail)
-    - 1200x628 (Facebook/LinkedIn Post)
-    - 1080x1080 (Instagram Square)
-    - 1080x1920 (Instagram Story/Reel)
-    - 1200x675 (Twitter/X Post)
-    - 1280x720 (HD - Web Banner)
-    - Custom dimensions (user-defined width/height)
-  - ✅ Automatically creates GIMP XCF file with all required layers:
-    - Title1, Title2, SpeakerName, SpeakerTitle, Date, Time (text layers with sample text)
-    - SpeakerPhoto (placeholder rectangle layer with visible border)
-  - ✅ Added sample text for each layer showing what content goes where
-  - ✅ Added GIMP guides (horizontal/vertical center, thirds) for better positioning
-  - ✅ Creates pleasant gradient background (white to light blue)
-  - ✅ Automatically positions text layers appropriately (centered titles, right-aligned date/time)
-  - ✅ Saves to templates directory with user-provided name
-  - ✅ Opens the new template in GIMP immediately for customization
-  - ✅ Refreshes template list after creation
-- **Benefits**: Makes it easy to start designing new templates without manual layer setup
-- **Usage**: Click "Create New Template" button, choose dimensions, enter a name, and the template is automatically generated and opened in GIMP for customization
-
 ## Secondary Enhancements
 
 ### 4. Batch Processing from CSV

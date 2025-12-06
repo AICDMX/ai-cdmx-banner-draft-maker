@@ -14,9 +14,10 @@ This tool provides a simple Python/Tkinter interface to:
 ## Prerequisites
 
 - **Python**: 3.8 or higher
+- **tkinter**: GUI library (Arch: `sudo pacman -S tk`, Ubuntu: `sudo apt install python3-tk`)
 - **GIMP**: 2.10 or higher, installed and available on your system PATH
 - **Platform**: Tested on Linux (Arch-based systems)
-- **Dependencies**: Only Python standard library (no external packages required)
+- **Dependencies**: Only Python standard library + system tkinter package
 
 ### Installing GIMP
 
@@ -37,46 +38,36 @@ gimp --version
 
 ## Installation
 
-### Using uv (Recommended)
-
-This project uses `uv` for environment management:
+No installation needed! This project uses only Python standard library, so you can run it directly:
 
 ```bash
-# Install uv if you don't have it
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
 # Clone or navigate to the project directory
 cd ai-cdmx-banner-draft-maker
 
-# Run the tool (uv will handle the environment)
-uv run banner_gui.py
-```
-
-### Direct Execution
-
-If you prefer not to use uv:
-
-```bash
-# Make the script executable
-chmod +x banner_gui.py
-
-# Run directly
-./banner_gui.py
-```
-
-Or:
-
-```bash
+# Run the tool
 python3 banner_gui.py
+```
+
+Or using the Makefile:
+
+```bash
+make run
+```
+
+You can also make it executable and run directly:
+
+```bash
+chmod +x banner_gui.py
+./banner_gui.py
 ```
 
 ## How to Use
 
 1. **Launch the GUI**:
    ```bash
-   uv run banner_gui.py
-   # or
    python3 banner_gui.py
+   # or
+   make run
    ```
 
 2. **Select Template Directory**:
