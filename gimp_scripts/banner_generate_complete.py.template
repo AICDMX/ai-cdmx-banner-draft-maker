@@ -5,6 +5,8 @@ from gi.repository import Gimp, Gio
 
 pdb = Gimp.get_pdb()
 
+print("Banner generation started...")
+
 # Load template
 try:
     proc = pdb.lookup_procedure("gimp-file-load")
@@ -153,7 +155,7 @@ if "SpeakerPhoto" in layers:
         config.set_property("image", photo_image)
         proc.run(config)
     except Exception as e:
-        print(f"Warning: Could not insert photo: {{e}}")
+        print("Warning: Could not insert photo: " + str(e))
 
 # Save as XCF
 if image:
@@ -175,6 +177,7 @@ if image:
 # Flatten and save as PNG
 if image:
     try:
+        print("Creating duplicate image for flattening...")
         proc = pdb.lookup_procedure("gimp-image-duplicate")
         if proc:
             config = proc.create_config()
@@ -183,43 +186,54 @@ if image:
 
             # Extract duplicated image
             flat_image = result.index(1) if hasattr(result, 'index') else result
+            print(f"Duplicate created: {{flat_image}}")
 
             # Flatten
+            print("Flattening image...")
             proc = pdb.lookup_procedure("gimp-image-flatten")
             if proc and flat_image:
                 config = proc.create_config()
                 config.set_property("image", flat_image)
                 proc.run(config)
+                print("Image flattened successfully")
 
-                # Get active layer
-                proc = pdb.lookup_procedure("gimp-image-get-active-layer")
-                if proc:
-                    config = proc.create_config()
-                    config.set_property("image", flat_image)
-                    result = proc.run(config)
-                    try:
-                        flat_layer = result.index(1) if hasattr(result, 'index') else result
-                    except:
-                        flat_layer = None
+                # Save as PNG
+                try:
+                    # Try multiple possible procedure names for GIMP 3.0
+                    procedures_to_try = [
+                        "gimp-file-save",
+                        "gimp-image-export-as",
+                        "file-png-save-defaults",
+                        "file-png-save",
+                        "png-save"
+                    ]
 
-                    # Save as PNG
-                    if flat_layer:
-                        proc = (pdb.lookup_procedure("file-png-save") or
-                                pdb.lookup_procedure("gimp-image-export-as"))
-
+                    proc = None
+                    for pname in procedures_to_try:
+                        proc = pdb.lookup_procedure(pname)
                         if proc:
-                            config = proc.create_config()
+                            break
+
+                    if proc:
+                        config = proc.create_config()
+                        config.set_property("image", flat_image)
+                        file_obj = Gio.File.new_for_path("{output_png}")
+                        config.set_property("file", file_obj)
+
+                        # Try to set run-mode if available
+                        try:
                             config.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
-                            config.set_property("image", flat_image)
-                            file_obj = Gio.File.new_for_path("{output_png}")
-                            config.set_property("file", file_obj)
-                            try:
-                                config.set_property("compression", 9)
-                            except:
-                                pass
-                            proc.run(config)
+                        except:
+                            pass
+
+                        proc.run(config)
+                    else:
+                        print("Warning: No PNG export procedure found")
+                except Exception as e:
+                    print("Warning: PNG save failed: " + str(e))
 
                 # Clean up flat image
+                print("Cleaning up duplicate image...")
                 try:
                     proc = pdb.lookup_procedure("gimp-image-delete")
                     if proc:
@@ -228,8 +242,12 @@ if image:
                         proc.run(config)
                 except:
                     pass
+        else:
+            print("ERROR: gimp-image-duplicate procedure not found!")
     except Exception as e:
-        print(f"Warning: PNG save failed: {{e}}")
+        print(f"ERROR: PNG processing failed: {{e}}")
+        import traceback
+        traceback.print_exc()
 
 # Clean up original image
 try:

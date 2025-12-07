@@ -75,9 +75,46 @@ class BannerGeneratorGUI:
     
     def setup_ui(self):
         """Set up all GUI components"""
-        # Main frame with padding
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # Create a canvas with scrollbar for the entire window
+        canvas = tk.Canvas(self.root, bg=self.root.cget('bg'), highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Bind mousewheel scrolling (cross-platform)
+        def _on_mousewheel(event):
+            if event.num == 4:  # Linux scroll up
+                canvas.yview_scroll(-1, "units")
+            elif event.num == 5:  # Linux scroll down
+                canvas.yview_scroll(1, "units")
+            else:  # Windows/macOS
+                canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)  # Windows/macOS
+        canvas.bind_all("<Button-4>", _on_mousewheel)   # Linux scroll up
+        canvas.bind_all("<Button-5>", _on_mousewheel)   # Linux scroll down
+
+        # Grid canvas and scrollbar
+        canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+
+        # Configure root grid weights
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+
+        # Content frame inside the scrollable area
+        content_frame = ttk.Frame(scrollable_frame, padding="10")
+        content_frame.pack(side="top", fill="x", expand=False)
+        content_frame.columnconfigure(0, weight=1)
+
+        main_frame = content_frame
 
         # Status display at the top
         self.status_var = tk.StringVar()
@@ -211,19 +248,20 @@ class BannerGeneratorGUI:
                   style='Accent.TButton').grid(
             row=row, column=0, columnspan=3, pady=(20, 10), sticky=(tk.W, tk.E))
 
-        # Status/messages area at the bottom
+        # Status/messages area at the bottom - fills remaining space
         row += 1
-        self.message_frame = ttk.LabelFrame(main_frame, text="Status", padding="5")
-        self.message_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
+        ttk.Label(main_frame, text="Log:", font=('', 9, 'bold')).grid(
+            row=row, column=0, sticky=tk.W, pady=(10, 5))
+        row += 1
 
-        self.message_text = scrolledtext.ScrolledText(main_frame, height=3, width=50, state=tk.DISABLED)
-        self.message_text.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
-        main_frame.rowconfigure(row, weight=0)
-        
+        self.message_text = scrolledtext.ScrolledText(main_frame, height=4, width=50, state=tk.DISABLED)
+        self.message_text.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 0))
+        main_frame.rowconfigure(row, weight=1)
+
         # Configure grid weights for resizing
         main_frame.columnconfigure(0, weight=1)
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.columnconfigure(2, weight=1)
     
     def load_config(self) -> dict:
         """Load configuration from JSON file"""
@@ -256,7 +294,11 @@ class BannerGeneratorGUI:
         """Save current configuration to JSON file"""
         # Get current template selection
         selected_template = self.get_selected_template()
-        
+
+        # If no template is currently selected, preserve the last saved template
+        if not selected_template:
+            selected_template = self.config.get("last_template", "")
+
         config = {
             "template_directory": self.template_dir_var.get(),
             "last_template": selected_template,
@@ -269,7 +311,7 @@ class BannerGeneratorGUI:
             "time": self.time_entry.get(),
             "photo_path": self.photo_path_var.get()
         }
-        
+
         # Update self.config so refresh_templates() uses the latest value
         self.config.update(config)
         
@@ -689,14 +731,11 @@ class BannerGeneratorGUI:
                 logs.append(result.stderr)
             
             log_output = "".join(logs) if logs else "No output from GIMP"
-            
+
             # Print to terminal
             print("=== GIMP Banner Generation Logs ===")
             print(log_output)
             print("=" * 40)
-            
-            # Show logs in popup
-            self.root.after(100, lambda logs=log_output: self.show_logs_popup("Banner Generation Logs", logs))
             
         except subprocess.TimeoutExpired as e:
             error_msg = (
@@ -1072,14 +1111,11 @@ class BannerGeneratorGUI:
                 logs.append(result.stderr)
             
             log_output = "".join(logs) if logs else "No output from GIMP"
-            
+
             # Print to terminal
             print("=== GIMP Template Creation Logs ===")
             print(log_output)
             print("=" * 40)
-            
-            # Show logs in popup
-            self.root.after(100, lambda logs=log_output: self.show_logs_popup("Template Creation Logs", logs))
             
         except subprocess.CalledProcessError as e:
             # Collect error logs
