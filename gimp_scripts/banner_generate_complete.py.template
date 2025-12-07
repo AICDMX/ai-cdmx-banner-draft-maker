@@ -83,9 +83,21 @@ for layer_name, text_value in text_fields.items():
                     config.set_property("text", text_value)
                     proc.run(config)
                 except Exception as e:
-                    pass
+                    # Fall back to gimp-text-layer-set-text if gimp-item-edit-text fails
+                    proc = pdb.lookup_procedure("gimp-text-layer-set-text")
+                    if proc:
+                        config = proc.create_config()
+                        config.set_property("layer", layer)
+                        config.set_property("text", text_value)
+                        proc.run(config)
             else:
-                pass
+                # Try gimp-text-layer-set-text directly
+                proc = pdb.lookup_procedure("gimp-text-layer-set-text")
+                if proc:
+                    config = proc.create_config()
+                    config.set_property("layer", layer)
+                    config.set_property("text", text_value)
+                    proc.run(config)
 
         except Exception as e:
             pass
