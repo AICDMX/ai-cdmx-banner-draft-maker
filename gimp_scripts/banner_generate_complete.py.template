@@ -28,7 +28,7 @@ if image:
     except Exception as e:
         print(f"Error listing layers: {{e}}")
 
-# Update text layers
+# Update text layers - use gimp-item-edit-text to preserve formatting
 text_fields = {{
     "Title1": "{title1}",
     "Title2": "{title2}",
@@ -41,16 +41,119 @@ text_fields = {{
 for layer_name, text_value in text_fields.items():
     if layer_name in layers:
         try:
-            proc = pdb.lookup_procedure("gimp-text-layer-set-text")
+            layer = layers[layer_name]
+
+            # Try using gimp-item-edit-text which preserves formatting
+            proc = pdb.lookup_procedure("gimp-item-edit-text")
             if proc:
-                config = proc.create_config()
-                config.set_property("layer", layers[layer_name])
-                config.set_property("text", text_value)
-                proc.run(config)
+                try:
+                    config = proc.create_config()
+                    config.set_property("item", layer)
+                    config.set_property("text", text_value)
+                    proc.run(config)
+                except:
+                    # Fall back to gimp-text-layer-set-text if gimp-item-edit-text fails
+                    proc = pdb.lookup_procedure("gimp-text-layer-set-text")
+                    if proc:
+                        config = proc.create_config()
+                        config.set_property("layer", layer)
+                        config.set_property("text", text_value)
+                        proc.run(config)
+            else:
+                # Try gimp-text-layer-set-text directly
+                proc = pdb.lookup_procedure("gimp-text-layer-set-text")
+                if proc:
+                    config = proc.create_config()
+                    config.set_property("layer", layer)
+                    config.set_property("text", text_value)
+                    proc.run(config)
+
         except Exception as e:
             print(f"Warning: Could not update layer '{{layer_name}}': {{e}}")
     else:
         print(f"Warning: Layer '{{layer_name}}' not found in template")
+
+# Handle speaker photo if SpeakerPhoto layer exists
+# This section is conditionally executed based on template structure
+if "SpeakerPhoto" in layers:
+    try:
+        photo_layer = layers["SpeakerPhoto"]
+
+        # Load the photo as a new image using PDB procedure
+        proc = pdb.lookup_procedure("gimp-file-load")
+        if proc:
+            config = proc.create_config()
+            file_obj = Gio.File.new_for_path("{photo_path}")
+            config.set_property("file", file_obj)
+            photo_result = proc.run(config)
+            try:
+                # Extract image from result - it's at index 1 like in template loading
+                photo_image = photo_result.index(1) if hasattr(photo_result, 'index') else photo_result
+            except (IndexError, AttributeError):
+                photo_image = None
+        else:
+            photo_image = None
+
+        # Check if photo was loaded successfully
+        if photo_image is None:
+            raise Exception("Failed to load photo image")
+
+        # Get active layer from photo using GIMP 3.0 API
+        layers_list = photo_image.get_layers()
+        if not layers_list:
+            raise Exception("Photo image has no layers")
+        photo_drawable = layers_list[0]
+
+        # Get the dimensions of the placeholder layer using GIMP 3.0 API
+        placeholder_width = photo_layer.get_width()
+        placeholder_height = photo_layer.get_height()
+        _, placeholder_x, placeholder_y = photo_layer.get_offsets()
+
+        # Get photo dimensions
+        photo_width = photo_drawable.get_width()
+        photo_height = photo_drawable.get_height()
+
+        # Scale the photo to fit the placeholder (maintaining aspect ratio)
+        scale_w = float(placeholder_width) / photo_width
+        scale_h = float(placeholder_height) / photo_height
+        scale = min(scale_w, scale_h)
+
+        new_width = int(photo_width * scale)
+        new_height = int(photo_height * scale)
+
+        # Scale image using GIMP 3.0 API
+        photo_image.scale(new_width, new_height)
+
+        # Get active layer again after scaling
+        layers_list = photo_image.get_layers()
+        if not layers_list:
+            raise Exception("Photo image has no layers after scaling")
+        photo_drawable = layers_list[0]
+
+        # Copy the photo layer to the main image using GIMP 3.0 API
+        new_layer = Gimp.Layer.new_from_drawable(photo_drawable, image)
+        if new_layer is None:
+            raise Exception("Failed to create layer from photo drawable")
+
+        # Insert layer using GIMP 3.0 API
+        image.insert_layer(new_layer, None, 0)
+
+        # Position the photo at the placeholder location (centered)
+        offset_x = placeholder_x + (placeholder_width - new_width) // 2
+        offset_y = placeholder_y + (placeholder_height - new_height) // 2
+
+        new_layer.set_offsets(offset_x, offset_y)
+
+        # Rename the new layer
+        new_layer.set_name("SpeakerPhoto_Inserted")
+
+        # Delete the photo image
+        proc = pdb.lookup_procedure("gimp-image-delete")
+        config = proc.create_config()
+        config.set_property("image", photo_image)
+        proc.run(config)
+    except Exception as e:
+        print(f"Warning: Could not insert photo: {{e}}")
 
 # Save as XCF
 if image:

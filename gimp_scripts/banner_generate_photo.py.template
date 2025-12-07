@@ -18,81 +18,55 @@ if "SpeakerPhoto" in layers:
         else:
             photo_image = None
     
-    # Get active layer
-    proc = pdb.lookup_procedure("gimp-image-get-active-layer")
-    config = proc.create_config()
-    config.set_property("image", photo_image)
-    drawable_result = proc.run(config)
-    try:
-        photo_drawable = drawable_result.index(0).get_layer() if drawable_result else None
-    except (IndexError, AttributeError):
-        photo_drawable = None
-    
+    # Check if photo was loaded successfully
+    if photo_image is None:
+        raise Exception("Failed to load photo image")
+
+    # Get active layer from photo using GIMP 3.0 API
+    layers_list = photo_image.get_layers()
+    if not layers_list:
+        raise Exception("Photo image has no layers")
+    photo_drawable = layers_list[0]
+
     # Get the dimensions of the placeholder layer using GIMP 3.0 API
     placeholder_width = photo_layer.get_width()
     placeholder_height = photo_layer.get_height()
-    placeholder_x, placeholder_y = photo_layer.get_offsets()
-    
+    _, placeholder_x, placeholder_y = photo_layer.get_offsets()
+
     # Get photo dimensions
     photo_width = photo_drawable.get_width()
     photo_height = photo_drawable.get_height()
-    
+
     # Scale the photo to fit the placeholder (maintaining aspect ratio)
     scale_w = float(placeholder_width) / photo_width
     scale_h = float(placeholder_height) / photo_height
     scale = min(scale_w, scale_h)
-    
+
     new_width = int(photo_width * scale)
     new_height = int(photo_height * scale)
-    
-    # Scale image
-    proc = pdb.lookup_procedure("gimp-image-scale")
-    config = proc.create_config()
-    config.set_property("image", photo_image)
-    config.set_property("new-width", new_width)
-    config.set_property("new-height", new_height)
-    proc.run(config)
-    
+
+    # Scale image using GIMP 3.0 API
+    photo_image.scale(new_width, new_height)
+
     # Get active layer again after scaling
-    proc = pdb.lookup_procedure("gimp-image-get-active-layer")
-    config = proc.create_config()
-    config.set_property("image", photo_image)
-    drawable_result = proc.run(config)
-    try:
-        photo_drawable = drawable_result.index(0).get_layer() if drawable_result else None
-    except (IndexError, AttributeError):
-        photo_drawable = None
-    
-    # Copy the photo layer to the main image
-    proc = pdb.lookup_procedure("gimp-layer-new-from-drawable")
-    config = proc.create_config()
-    config.set_property("drawable", photo_drawable)
-    config.set_property("dest-image", image)
-    layer_result = proc.run(config)
-    try:
-        new_layer = layer_result.index(0).get_layer() if layer_result else None
-    except (IndexError, AttributeError):
-        new_layer = None
-    
-    # Insert layer
-    proc = pdb.lookup_procedure("gimp-image-insert-layer")
-    config = proc.create_config()
-    config.set_property("image", image)
-    config.set_property("layer", new_layer)
-    config.set_property("parent", None)
-    config.set_property("position", 0)
-    proc.run(config)
-    
+    layers_list = photo_image.get_layers()
+    if not layers_list:
+        raise Exception("Photo image has no layers after scaling")
+    photo_drawable = layers_list[0]
+
+    # Copy the photo layer to the main image using GIMP 3.0 API
+    new_layer = Gimp.Layer.new_from_drawable(photo_drawable, image)
+    if new_layer is None:
+        raise Exception("Failed to create layer from photo drawable")
+
+    # Insert layer using GIMP 3.0 API
+    image.insert_layer(new_layer, None, 0)
+
     # Position the photo at the placeholder location (centered)
     offset_x = placeholder_x + (placeholder_width - new_width) // 2
     offset_y = placeholder_y + (placeholder_height - new_height) // 2
-    
-    proc = pdb.lookup_procedure("gimp-layer-set-offsets")
-    config = proc.create_config()
-    config.set_property("layer", new_layer)
-    config.set_property("x", offset_x)
-    config.set_property("y", offset_y)
-    proc.run(config)
+
+    new_layer.set_offsets(offset_x, offset_y)
     
     # Rename the new layer
     new_layer.set_name("SpeakerPhoto_Inserted")

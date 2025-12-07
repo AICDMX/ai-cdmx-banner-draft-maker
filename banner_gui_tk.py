@@ -16,27 +16,12 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from gimp_scripts_gimp3 import generate_banner_script_gimp3
-
-
-def load_gimp_template(template_name: str) -> str:
-    """
-    Load a GIMP script template from the gimp_scripts directory.
-    
-    Args:
-        template_name: Name of the template file (e.g., 'banner_generate_main.py.template')
-    
-    Returns:
-        Template content as string
-    """
-    script_dir = Path(__file__).parent / "gimp_scripts"
-    template_path = script_dir / template_name
-    
-    if not template_path.exists():
-        raise FileNotFoundError(f"Template file not found: {template_path}")
-    
-    with open(template_path, 'r', encoding='utf-8') as f:
-        return f.read()
+from gimp_scripts_gimp3 import (
+    generate_banner_script_gimp3,
+    load_gimp_template,
+    get_gimp_version,
+    build_gimp_command
+)
 
 
 class BannerGeneratorGUI:
@@ -45,22 +30,28 @@ class BannerGeneratorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("GIMP Banner Generator")
-        self.root.geometry("600x700")
-        
+        self.root.geometry("600x850")
+
         # Session state for remembering values
         self.last_output_dir = ""
         self.last_time = ""
-        
+
+        # Flag to prevent auto-saving during initialization
+        self.initializing = True
+
         # Config file path for persistent settings
         self.config_dir = Path.home() / ".config" / "gimp-banner-generator"
         self.config_file = self.config_dir / "config.json"
-        
+
         # Load saved configuration
         self.config = self.load_config()
-        
+
         self.setup_ui()
         self.restore_saved_settings()
-        
+
+        # Done initializing - now auto-save is enabled
+        self.initializing = False
+
         # Save config when window closes
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
     
@@ -87,8 +78,14 @@ class BannerGeneratorGUI:
         # Main frame with padding
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        row = 0
+
+        # Status display at the top
+        self.status_var = tk.StringVar()
+        self.status_label = ttk.Label(main_frame, textvariable=self.status_var,
+                                      foreground="green", font=('', 9))
+        self.status_label.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
+
+        row = 1
         
         # Template Directory Section
         ttk.Label(main_frame, text="Template Directory:", font=('', 10, 'bold')).grid(
@@ -146,32 +143,36 @@ class BannerGeneratorGUI:
         self.title1_entry = ttk.Entry(main_frame, width=50)
         self.title1_entry.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
         self.bind_select_all(self.title1_entry)
+        self.title1_entry.bind('<FocusOut>', lambda e: not self.initializing and self.save_config())
         row += 1
-        
+
         # Title 2
         ttk.Label(main_frame, text="Title 2:").grid(row=row, column=0, sticky=tk.W, pady=(0, 5))
         row += 1
         self.title2_entry = ttk.Entry(main_frame, width=50)
         self.title2_entry.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
         self.bind_select_all(self.title2_entry)
+        self.title2_entry.bind('<FocusOut>', lambda e: not self.initializing and self.save_config())
         row += 1
-        
+
         # Speaker Name
         ttk.Label(main_frame, text="Speaker Name:").grid(row=row, column=0, sticky=tk.W, pady=(0, 5))
         row += 1
         self.speaker_name_entry = ttk.Entry(main_frame, width=50)
         self.speaker_name_entry.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
         self.bind_select_all(self.speaker_name_entry)
+        self.speaker_name_entry.bind('<FocusOut>', lambda e: not self.initializing and self.save_config())
         row += 1
-        
+
         # Speaker Title
         ttk.Label(main_frame, text="Speaker Title:").grid(row=row, column=0, sticky=tk.W, pady=(0, 5))
         row += 1
         self.speaker_title_entry = ttk.Entry(main_frame, width=50)
         self.speaker_title_entry.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
         self.bind_select_all(self.speaker_title_entry)
+        self.speaker_title_entry.bind('<FocusOut>', lambda e: not self.initializing and self.save_config())
         row += 1
-        
+
         # Date (free text)
         ttk.Label(main_frame, text="Date (e.g., Dec 31, 2025 or 2025-12-31):").grid(
             row=row, column=0, sticky=tk.W, pady=(0, 5))
@@ -179,14 +180,16 @@ class BannerGeneratorGUI:
         self.date_entry = ttk.Entry(main_frame, width=50)
         self.date_entry.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
         self.bind_select_all(self.date_entry)
+        self.date_entry.bind('<FocusOut>', lambda e: not self.initializing and self.save_config())
         row += 1
-        
+
         # Time (free text, with memory)
         ttk.Label(main_frame, text="Time:").grid(row=row, column=0, sticky=tk.W, pady=(0, 5))
         row += 1
         self.time_entry = ttk.Entry(main_frame, width=50)
         self.time_entry.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
         self.bind_select_all(self.time_entry)
+        self.time_entry.bind('<FocusOut>', lambda e: not self.initializing and self.save_config())
         row += 1
         
         # Speaker Photo
@@ -203,10 +206,19 @@ class BannerGeneratorGUI:
         row += 1
         
         # Generate Button
-        ttk.Button(main_frame, text="Generate & Open in GIMP", 
-                  command=self.generate_banner, 
+        ttk.Button(main_frame, text="Generate & Open in GIMP",
+                  command=self.generate_banner,
                   style='Accent.TButton').grid(
             row=row, column=0, columnspan=3, pady=(20, 10), sticky=(tk.W, tk.E))
+
+        # Status/messages area at the bottom
+        row += 1
+        self.message_frame = ttk.LabelFrame(main_frame, text="Status", padding="5")
+        self.message_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
+
+        self.message_text = scrolledtext.ScrolledText(main_frame, height=3, width=50, state=tk.DISABLED)
+        self.message_text.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
+        main_frame.rowconfigure(row, weight=0)
         
         # Configure grid weights for resizing
         main_frame.columnconfigure(0, weight=1)
@@ -318,6 +330,10 @@ class BannerGeneratorGUI:
     
     def on_template_selected(self, event):
         """Handle template selection event"""
+        # Only save during user interaction, not during initialization
+        if self.initializing:
+            return
+
         # Save config when user selects a different template
         # This ensures the selection persists between restarts
         # Update config immediately so refresh_templates() uses the latest value
@@ -336,26 +352,26 @@ class BannerGeneratorGUI:
         if directory:
             self.template_dir_var.set(directory)
             self.refresh_templates()
-            # Save config after refreshing (refresh_templates will restore last template if it exists)
+            # Save template directory to config (template selection will be saved when user selects one)
             self.save_config()
     
     def refresh_templates(self):
         """Refresh the list of available templates"""
         # Remember current selection before clearing
         current_selection = self.get_selected_template()
-        
+
         self.template_listbox.delete(0, tk.END)
         template_dir = self.template_dir_var.get()
-        
+
         if not template_dir or not os.path.isdir(template_dir):
             return
-        
+
         # Find all .xcf files in the directory
         templates = sorted([f for f in os.listdir(template_dir) if f.endswith('.xcf')])
-        
+
         for template in templates:
             self.template_listbox.insert(tk.END, template)
-        
+
         # Try to restore the last selected template if it still exists
         # Use the saved config value, which should be up-to-date
         last_template = self.config.get("last_template", "")
@@ -366,6 +382,7 @@ class BannerGeneratorGUI:
             self.select_template_by_name(current_selection)
             # Save this selection to config
             self.config["last_template"] = current_selection
+            self.save_config()
     
     def browse_output_dir(self):
         """Browse for output directory"""
@@ -390,7 +407,34 @@ class BannerGeneratorGUI:
         )
         if path:
             self.photo_path_var.set(path)
+            self.save_config()
     
+    def guess_year(self, month: int, day: int) -> int:
+        """
+        Guess the year for a given month and day.
+        If the date is today or in the future this year, use this year.
+        If the date is in the past this year, use next year.
+        """
+        today = datetime.now()
+        current_year = today.year
+
+        # Create date objects for this year and next year
+        try:
+            date_this_year = datetime(current_year, month, day)
+        except ValueError:
+            # Invalid date, use current year
+            return current_year
+
+        # Compare only date parts, ignoring time
+        today_date = datetime(current_year, today.month, today.day)
+
+        # If the date is today or in the future, use this year
+        if date_this_year >= today_date:
+            return current_year
+        else:
+            # Date is in the past, use next year
+            return current_year + 1
+
     def parse_date_from_text(self, date_text: str) -> Optional[str]:
         """
         Try to extract a date from free-form text and return YYYY-MM-DD format.
@@ -398,13 +442,13 @@ class BannerGeneratorGUI:
         """
         if not date_text:
             return None
-        
+
         # Pattern 1: YYYY-MM-DD (anywhere in text)
         match = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', date_text)
         if match:
             year, month, day = match.groups()
             return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-        
+
         # Pattern 2: MM/DD/YYYY or DD/MM/YYYY
         match = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', date_text)
         if match:
@@ -412,8 +456,8 @@ class BannerGeneratorGUI:
             part1, part2, year = match.groups()
             month, day = part1, part2
             return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-        
-        # Pattern 3: Month name formats (Dec 31, 2025 or December 31, 2025)
+
+        # Pattern 3: Month name formats (with or without year)
         month_names = {
             'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04',
             'may': '05', 'jun': '06', 'jul': '07', 'aug': '08',
@@ -422,22 +466,40 @@ class BannerGeneratorGUI:
             'june': '06', 'july': '07', 'august': '08', 'september': '09',
             'october': '10', 'november': '11', 'december': '12'
         }
-        
+
         for month_name, month_num in month_names.items():
-            # Pattern: "Dec 31, 2025" or "December 31, 2025"
-            pattern = rf'\b{month_name}\.?\s+(\d{{1,2}}),?\s+(\d{{4}})\b'
+            # Pattern: "Dec 31, 2025" or "December 31, 2025" (with year)
+            pattern = rf'\b{month_name}\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b'
             match = re.search(pattern, date_text, re.IGNORECASE)
             if match:
                 day, year = match.groups()
                 return f"{year}-{month_num}-{day.zfill(2)}"
-            
-            # Pattern: "31 Dec 2025" or "31 December 2025"
-            pattern = rf'\b(\d{{1,2}})\s+{month_name}\.?\s+(\d{{4}})\b'
+
+            # Pattern: "31 Dec 2025" or "31 December 2025" (with year)
+            pattern = rf'\b(\d{{1,2}})(?:st|nd|rd|th)?\s+{month_name}\.?\s+(\d{{4}})\b'
             match = re.search(pattern, date_text, re.IGNORECASE)
             if match:
                 day, year = match.groups()
                 return f"{year}-{month_num}-{day.zfill(2)}"
-        
+
+            # Pattern: "Dec 31" or "December 31" (without year - guess year)
+            pattern = rf'\b{month_name}\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b'
+            match = re.search(pattern, date_text, re.IGNORECASE)
+            if match:
+                day = match.group(1)
+                month = int(month_num)
+                year = self.guess_year(month, int(day))
+                return f"{year}-{month_num}-{day.zfill(2)}"
+
+            # Pattern: "31 Dec" or "31 December" (without year - guess year)
+            pattern = rf'\b(\d{{1,2}})(?:st|nd|rd|th)?\s+{month_name}\.?\b'
+            match = re.search(pattern, date_text, re.IGNORECASE)
+            if match:
+                day = match.group(1)
+                month = int(month_num)
+                year = self.guess_year(month, int(day))
+                return f"{year}-{month_num}-{day.zfill(2)}"
+
         return None
     
     def slugify(self, text: str, max_length: int = 10) -> str:
@@ -451,61 +513,6 @@ class BannerGeneratorGUI:
         text = text.strip('-')
         return text or 'banner'
     
-    def get_gimp_version(self) -> tuple:
-        """
-        Detect GIMP version by running gimp --version.
-        Returns (major, minor) version tuple.
-        Raises NotImplementedError if GIMP 2.x is detected or version detection fails.
-        """
-        try:
-            gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
-            result = subprocess.run(
-                [gimp_binary, '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                # Parse version string like "GIMP version 3.0.6"
-                version_output = result.stdout.strip()
-                import re
-                match = re.search(r'(\d+)\.(\d+)', version_output)
-                if match:
-                    major = int(match.group(1))
-                    minor = int(match.group(2))
-                    # Check if GIMP 2.x is detected
-                    if major < 3:
-                        raise NotImplementedError("GIMP 2.x is not supported")
-                    return (major, minor)
-        except NotImplementedError:
-            raise
-        except Exception:
-            pass
-        # If version detection fails, raise NotImplementedError
-        raise NotImplementedError("GIMP version detection failed. GIMP 3.0+ is required.")
-    
-    def build_gimp_command(self, script_file: str) -> list:
-        """
-        Build GIMP command for headless batch execution.
-        Prefers gimp-console over gimp for batch operations as it's designed for headless use.
-        Always uses xvfb-run when available to ensure a clean virtual display.
-        """
-        # Prefer gimp-console for batch operations (better for headless)
-        gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
-        gimp_cmd = [gimp_binary, '-i', '--batch-interpreter', 'python-fu-eval', '-b', f'exec(open("{script_file}").read())', '--quit']
-        
-        # Always use xvfb-run for batch operations when available
-        # This ensures a clean, isolated environment even if DISPLAY is set incorrectly
-        if shutil.which('xvfb-run'):
-            return ['xvfb-run', '-a'] + gimp_cmd
-        else:
-            # xvfb-run not available
-            # Check if DISPLAY is set - if not, we'll get an error
-            if not os.environ.get('DISPLAY'):
-                # No display and no xvfb-run - this will likely fail
-                # But try anyway with --no-interface flag
-                gimp_cmd.insert(1, '--no-interface')
-            return gimp_cmd
     
     def generate_banner(self):
         """Main function to generate the banner"""
@@ -513,61 +520,64 @@ class BannerGeneratorGUI:
         time_value = self.time_entry.get()
         if time_value:
             self.last_time = time_value
-        
+
         # Validate required fields
         if not self.template_dir_var.get():
-            messagebox.showerror("Error", "Please select a template directory")
+            self.display_message("⚠ Error: Please select a template directory")
             return
-        
+
         selection = self.template_listbox.curselection()
         if not selection:
-            messagebox.showerror("Error", "Please select a template")
+            self.display_message("⚠ Error: Please select a template")
             return
-        
+
         template_name = self.template_listbox.get(selection[0])
         template_path = os.path.join(self.template_dir_var.get(), template_name)
-        
+
         if not os.path.exists(template_path):
-            messagebox.showerror("Error", f"Template file not found: {template_path}")
+            self.display_message(f"⚠ Error: Template file not found: {template_path}")
             return
-        
+
         if not self.output_dir_var.get():
-            messagebox.showerror("Error", "Please select an output directory")
+            self.display_message("⚠ Error: Please select an output directory")
             return
-        
+
         if not self.title1_entry.get():
-            messagebox.showerror("Error", "Title 1 is required")
+            self.display_message("⚠ Error: Title 1 is required")
             return
-        
+
         if not self.speaker_name_entry.get():
-            messagebox.showerror("Error", "Speaker Name is required")
+            self.display_message("⚠ Error: Speaker Name is required")
             return
-        
+
         if not self.date_entry.get():
-            messagebox.showerror("Error", "Date is required")
+            self.display_message("⚠ Error: Date is required")
             return
-        
+
         if not self.time_entry.get():
-            messagebox.showerror("Error", "Time is required")
+            self.display_message("⚠ Error: Time is required")
             return
-        
+
         # Validate speaker photo if provided
         photo_path = self.photo_path_var.get()
         if photo_path and not os.path.exists(photo_path):
-            messagebox.showerror("Error", f"Speaker photo not found: {photo_path}")
+            self.display_message(f"⚠ Error: Speaker photo not found: {photo_path}")
             return
         
         # Build output filename
         date_text = self.date_entry.get()
         parsed_date = self.parse_date_from_text(date_text)
-        
+
         title_slug = self.slugify(self.title1_entry.get(), 10)
-        
+
+        # Extract template name without extension and truncate to 10 chars
+        template_slug = self.slugify(os.path.splitext(template_name)[0], 10)
+
         if parsed_date:
-            base_filename = f"{parsed_date}-{title_slug}"
+            base_filename = f"{parsed_date}-{title_slug}-{template_slug}"
         else:
-            base_filename = f"banner-{title_slug}"
-        
+            base_filename = f"banner-{title_slug}-{template_slug}"
+
         output_xcf = os.path.join(self.output_dir_var.get(), f"{base_filename}.xcf")
         output_png = os.path.join(self.output_dir_var.get(), f"{base_filename}.png")
         
@@ -588,14 +598,13 @@ class BannerGeneratorGUI:
             
             # Save config with current template and settings
             self.save_config()
-            
+
+            # Display success message in status area
+            success_msg = f"✓ Banner generated!\nXCF: {base_filename}.xcf\nPNG: {base_filename}.png\nOpening in GIMP..."
+            self.display_message(success_msg)
+
             # Open the XCF in GIMP for manual editing
             subprocess.Popen(['gimp', output_xcf])
-            
-            messagebox.showinfo(
-                "Success", 
-                f"Banner generated!\n\nXCF: {base_filename}.xcf\nPNG: {base_filename}.png\n\nOpening in GIMP..."
-            )
             
         except subprocess.CalledProcessError:
             # Error already shown in copyable popup by update_banner, no need to show another
@@ -610,46 +619,22 @@ class BannerGeneratorGUI:
                                photo_path: str, output_xcf: str, output_png: str) -> str:
         """
         Generate GIMP script for updating banner template.
-        Returns script content compatible with detected GIMP version.
+        Uses the shared generate_banner_script_gimp3() function to ensure both GUI and auto
+        versions generate identical scripts.
         """
-        # Escape strings for Python script
-        def escape(s):
-            return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
-        
-        # Detect GIMP version
-        gimp_version = self.get_gimp_version()
-        is_gimp3 = gimp_version[0] >= 3
-        
-        if is_gimp3:
-            # Load main template
-            script = load_gimp_template("banner_generate_main.py.template")
-            
-            # Format main template with escaped values
-            script = script.format(
-                template_path=escape(template_path),
-                title1=escape(title1),
-                title2=escape(title2),
-                speaker_name=escape(speaker_name),
-                speaker_title=escape(speaker_title),
-                date=escape(date),
-                time=escape(time)
-            )
-            
-            # Add photo handling if photo is provided
-            if photo_path:
-                photo_template = load_gimp_template("banner_generate_photo.py.template")
-                script += "\n" + photo_template.format(photo_path=escape(photo_path))
-            
-            # Add save operations
-            save_template = load_gimp_template("banner_generate_save.py.template")
-            script += "\n" + save_template.format(
-                output_xcf=escape(output_xcf),
-                output_png=escape(output_png)
-            )
-        else:
-            raise NotImplementedError("GIMP 2.x is not supported")
-        
-        return script
+        # Use the shared script generation function (which validates GIMP version internally)
+        return generate_banner_script_gimp3(
+            template_path=template_path,
+            title1=title1,
+            title2=title2,
+            speaker_name=speaker_name,
+            speaker_title=speaker_title,
+            date=date,
+            time=time,
+            photo_path=photo_path,
+            output_xcf=output_xcf,
+            output_png=output_png
+        )
     
     def update_banner(self, template_path: str, title1: str, title2: str, 
                      speaker_name: str, speaker_title: str, date: str, time: str,
@@ -672,7 +657,7 @@ class BannerGeneratorGUI:
         
         try:
             # Run GIMP in batch mode (with headless support)
-            gimp_cmd = self.build_gimp_command(script_file)
+            gimp_cmd = build_gimp_command(script_file)
             # Debug: log the command being executed
             print(f"DEBUG: Executing GIMP command: {' '.join(gimp_cmd)}")
             
@@ -806,7 +791,7 @@ class BannerGeneratorGUI:
         def copy_logs():
             dialog.clipboard_clear()
             dialog.clipboard_append(logs)
-            messagebox.showinfo("Copied", "Logs copied to clipboard!", parent=dialog)
+            self.display_message("✓ Logs copied to clipboard!")
         
         ttk.Button(button_frame, text="Copy to Clipboard", command=copy_logs).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
@@ -822,6 +807,15 @@ class BannerGeneratorGUI:
         self.save_config()
         self.root.destroy()
     
+    def display_message(self, message: str):
+        """Display a message in the status text area"""
+        self.message_text.config(state=tk.NORMAL)
+        # Add timestamp
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.message_text.insert(tk.END, f"[{timestamp}] {message}\n")
+        self.message_text.see(tk.END)  # Auto-scroll to bottom
+        self.message_text.config(state=tk.DISABLED)
+
     def set_remembered_values(self):
         """Set remembered values from last session"""
         if self.last_output_dir:
@@ -896,13 +890,13 @@ class BannerGeneratorGUI:
             """Handle template creation"""
             template_name = name_var.get().strip()
             if not template_name:
-                messagebox.showerror("Error", "Please enter a template name", parent=dialog)
+                self.display_message("⚠ Error: Please enter a template name")
                 return
-            
+
             # Add .xcf extension if not present
             if not template_name.endswith('.xcf'):
                 template_name += '.xcf'
-            
+
             # Get dimensions
             dimension_choice = dimension_var.get()
             if dimension_choice == "custom":
@@ -912,7 +906,7 @@ class BannerGeneratorGUI:
                     if width <= 0 or height <= 0:
                         raise ValueError("Dimensions must be positive")
                 except ValueError as e:
-                    messagebox.showerror("Error", f"Invalid custom dimensions: {e}", parent=dialog)
+                    self.display_message(f"⚠ Error: Invalid custom dimensions: {e}")
                     return
             else:
                 width, height = map(int, dimension_choice.split('x'))
@@ -930,13 +924,9 @@ class BannerGeneratorGUI:
             try:
                 self.generate_template_file(template_path, width, height)
                 dialog.destroy()
-                messagebox.showinfo(
-                    "Success", 
-                    f"Template '{template_name}' created successfully!\n\n"
-                    f"Dimensions: {width}x{height}\n"
-                    f"Location: {template_path}\n\n"
-                    f"Opening in GIMP for customization..."
-                )
+                # Display success message in status area
+                success_msg = f"✓ Template '{template_name}' created successfully!\nDimensions: {width}x{height}\nOpening in GIMP for customization..."
+                self.display_message(success_msg)
                 # Refresh template list
                 self.refresh_templates()
                 # Select the newly created template
@@ -1050,7 +1040,7 @@ class BannerGeneratorGUI:
         
         try:
             # Run GIMP in batch mode (with headless support)
-            gimp_cmd = self.build_gimp_command(script_file)
+            gimp_cmd = build_gimp_command(script_file)
             # Debug: log the command being executed
             print(f"DEBUG: Executing GIMP command: {' '.join(gimp_cmd)}")
             

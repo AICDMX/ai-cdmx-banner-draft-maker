@@ -12,8 +12,13 @@ import sys
 import shutil
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
-from gimp_scripts_gimp3 import generate_banner_script_gimp3
+from gimp_scripts_gimp3 import (
+    generate_banner_script_gimp3,
+    get_gimp_version,
+    build_gimp_command
+)
 
 
 class BannerGeneratorAuto:
@@ -51,25 +56,51 @@ class BannerGeneratorAuto:
             print(f"Warning: Could not load config file: {e}", file=sys.stderr)
             return default_config
     
+    def guess_year(self, month: int, day: int) -> int:
+        """
+        Guess the year for a given month and day.
+        If the date is today or in the future this year, use this year.
+        If the date is in the past this year, use next year.
+        """
+        today = datetime.now()
+        current_year = today.year
+
+        # Create date objects for this year and next year
+        try:
+            date_this_year = datetime(current_year, month, day)
+        except ValueError:
+            # Invalid date, use current year
+            return current_year
+
+        # Compare only date parts, ignoring time
+        today_date = datetime(current_year, today.month, today.day)
+
+        # If the date is today or in the future, use this year
+        if date_this_year >= today_date:
+            return current_year
+        else:
+            # Date is in the past, use next year
+            return current_year + 1
+
     def parse_date_from_text(self, date_text: str) -> Optional[str]:
         """Try to extract a date from free-form text and return YYYY-MM-DD format."""
         if not date_text:
             return None
-        
+
         # Pattern 1: YYYY-MM-DD (anywhere in text)
         match = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', date_text)
         if match:
             year, month, day = match.groups()
             return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-        
+
         # Pattern 2: MM/DD/YYYY or DD/MM/YYYY
         match = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', date_text)
         if match:
             part1, part2, year = match.groups()
             month, day = part1, part2
             return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-        
-        # Pattern 3: Month name formats
+
+        # Pattern 3: Month name formats (with or without year)
         month_names = {
             'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04',
             'may': '05', 'jun': '06', 'jul': '07', 'aug': '08',
@@ -78,20 +109,40 @@ class BannerGeneratorAuto:
             'june': '06', 'july': '07', 'august': '08', 'september': '09',
             'october': '10', 'november': '11', 'december': '12'
         }
-        
+
         for month_name, month_num in month_names.items():
-            pattern = rf'\b{month_name}\.?\s+(\d{{1,2}}),?\s+(\d{{4}})\b'
+            # Pattern: "Dec 31, 2025" or "December 31, 2025" (with year)
+            pattern = rf'\b{month_name}\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b'
             match = re.search(pattern, date_text, re.IGNORECASE)
             if match:
                 day, year = match.groups()
                 return f"{year}-{month_num}-{day.zfill(2)}"
-            
-            pattern = rf'\b(\d{{1,2}})\s+{month_name}\.?\s+(\d{{4}})\b'
+
+            # Pattern: "31 Dec 2025" or "31 December 2025" (with year)
+            pattern = rf'\b(\d{{1,2}})(?:st|nd|rd|th)?\s+{month_name}\.?\s+(\d{{4}})\b'
             match = re.search(pattern, date_text, re.IGNORECASE)
             if match:
                 day, year = match.groups()
                 return f"{year}-{month_num}-{day.zfill(2)}"
-        
+
+            # Pattern: "Dec 31" or "December 31" (without year - guess year)
+            pattern = rf'\b{month_name}\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b'
+            match = re.search(pattern, date_text, re.IGNORECASE)
+            if match:
+                day = match.group(1)
+                month = int(month_num)
+                year = self.guess_year(month, int(day))
+                return f"{year}-{month_num}-{day.zfill(2)}"
+
+            # Pattern: "31 Dec" or "31 December" (without year - guess year)
+            pattern = rf'\b(\d{{1,2}})(?:st|nd|rd|th)?\s+{month_name}\.?\b'
+            match = re.search(pattern, date_text, re.IGNORECASE)
+            if match:
+                day = match.group(1)
+                month = int(month_num)
+                year = self.guess_year(month, int(day))
+                return f"{year}-{month_num}-{day.zfill(2)}"
+
         return None
     
     def slugify(self, text: str, max_length: int = 10) -> str:
@@ -102,93 +153,24 @@ class BannerGeneratorAuto:
         text = text.strip('-')
         return text or 'banner'
     
-    def get_gimp_version(self) -> tuple:
-        """
-        Detect GIMP version by running gimp --version.
-        Returns (major, minor) version tuple.
-        Raises NotImplementedError if GIMP 2.x is detected or version detection fails.
-        """
-        try:
-            gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
-            result = subprocess.run(
-                [gimp_binary, '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                version_output = result.stdout.strip()
-                match = re.search(r'(\d+)\.(\d+)', version_output)
-                if match:
-                    major = int(match.group(1))
-                    minor = int(match.group(2))
-                    # Check if GIMP 2.x is detected
-                    if major < 3:
-                        raise NotImplementedError("GIMP 2.x is not supported")
-                    return (major, minor)
-        except NotImplementedError:
-            raise
-        except Exception:
-            pass
-        # If version detection fails, raise NotImplementedError
-        raise NotImplementedError("GIMP version detection failed. GIMP 3.0+ is required.")
-    
-    def build_gimp_command(self, script_file: str) -> list:
-        """Build GIMP command for headless batch execution."""
-        gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
-        gimp_cmd = [gimp_binary, '-i', '--batch-interpreter', 'python-fu-eval', '-b', f'exec(open("{script_file}").read())', '--quit']
-        
-        if shutil.which('xvfb-run'):
-            return ['xvfb-run', '-a'] + gimp_cmd
-        else:
-            if not os.environ.get('DISPLAY'):
-                gimp_cmd.insert(1, '--no-interface')
-            return gimp_cmd
-    
-    def generate_banner_script(self, template_path: str, title1: str, title2: str,
-                               speaker_name: str, speaker_title: str, date: str, time: str,
-                               photo_path: str, output_xcf: str, output_png: str) -> str:
-        """Generate GIMP 3.0 script for updating banner template."""
-        # Check GIMP version and raise error if GIMP 2.x is detected
-        gimp_version = self.get_gimp_version()
-        if gimp_version[0] < 3:
-            raise NotImplementedError("GIMP 2.x is not supported")
-        
-        # Use the dedicated script generation function for GIMP 3.0
-        return generate_banner_script_gimp3(
-            template_path=template_path,
-            title1=title1,
-            title2=title2,
-            speaker_name=speaker_name,
-            speaker_title=speaker_title,
-            date=date,
-            time=time,
-            photo_path=photo_path,
-            output_xcf=output_xcf,
-            output_png=output_png
-        )
 
-    def update_banner(self, template_path: str, title1: str, title2: str, 
+    def update_banner(self, template_path: str, title1: str, title2: str,
                      speaker_name: str, speaker_title: str, date: str, time: str,
                      photo_path: str, output_xcf: str, output_png: str):
         """Use headless GIMP to update the template with provided values."""
-        # Check GIMP version before proceeding
-        gimp_version = self.get_gimp_version()
-        if gimp_version[0] < 3:
-            raise NotImplementedError("GIMP 2.x is not supported")
-        
-        script = self.generate_banner_script(
+        # Generate script using the shared function
+        script = generate_banner_script_gimp3(
             template_path, title1, title2, speaker_name, speaker_title,
             date, time, photo_path, output_xcf, output_png
         )
-        
+
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             script_file = f.name
             f.write(script)
-        
+
         try:
-            gimp_cmd = self.build_gimp_command(script_file)
+            gimp_cmd = build_gimp_command(script_file)
             
             env = os.environ.copy()
             env.pop('VIRTUAL_ENV', None)
@@ -308,14 +290,17 @@ class BannerGeneratorAuto:
         # Build output filename
         date_text = self.config["date"]
         parsed_date = self.parse_date_from_text(date_text)
-        
+
         title_slug = self.slugify(self.config["title1"], 10)
-        
+
+        # Extract template name without extension and truncate to 10 chars
+        template_slug = self.slugify(os.path.splitext(template_name)[0], 10)
+
         if parsed_date:
-            base_filename = f"{parsed_date}-{title_slug}"
+            base_filename = f"{parsed_date}-{title_slug}-{template_slug}"
         else:
-            base_filename = f"banner-{title_slug}"
-        
+            base_filename = f"banner-{title_slug}-{template_slug}"
+
         output_xcf = os.path.join(self.config["output_directory"], f"{base_filename}.xcf")
         output_png = os.path.join(self.config["output_directory"], f"{base_filename}.png")
         

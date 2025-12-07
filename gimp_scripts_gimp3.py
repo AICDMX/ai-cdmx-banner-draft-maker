@@ -2,9 +2,13 @@
 GIMP 3.0 Script Generation Module
 
 Generates Python scripts for GIMP 3.0 to handle banner image manipulation.
-This module separates the complex script generation logic from the GUI.
+This module separates the complex script generation logic from the GUI and auto modules.
 """
 
+import subprocess
+import os
+import shutil
+import re
 from pathlib import Path
 
 
@@ -33,6 +37,49 @@ def load_gimp_template(template_name: str) -> str:
         return f.read()
 
 
+def get_gimp_version() -> tuple:
+    """
+    Detect GIMP version by running gimp --version.
+    Returns (major, minor) version tuple.
+    Raises NotImplementedError if GIMP 2.x is detected or version detection fails.
+    """
+    try:
+        gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
+        result = subprocess.run(
+            [gimp_binary, '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            version_output = result.stdout.strip()
+            match = re.search(r'(\d+)\.(\d+)', version_output)
+            if match:
+                major = int(match.group(1))
+                minor = int(match.group(2))
+                if major < 3:
+                    raise NotImplementedError("GIMP 2.x is not supported")
+                return (major, minor)
+    except NotImplementedError:
+        raise
+    except Exception:
+        pass
+    raise NotImplementedError("GIMP version detection failed. GIMP 3.0+ is required.")
+
+
+def build_gimp_command(script_file: str) -> list:
+    """Build GIMP command for headless batch execution."""
+    gimp_binary = 'gimp-console' if shutil.which('gimp-console') else 'gimp'
+    gimp_cmd = [gimp_binary, '-i', '--batch-interpreter', 'python-fu-eval', '-b', f'exec(open("{script_file}").read())', '--quit']
+
+    if shutil.which('xvfb-run'):
+        return ['xvfb-run', '-a'] + gimp_cmd
+    else:
+        if not os.environ.get('DISPLAY'):
+            gimp_cmd.insert(1, '--no-interface')
+        return gimp_cmd
+
+
 def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
                                   speaker_title, date, time, photo_path,
                                   output_xcf, output_png):
@@ -56,7 +103,7 @@ def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
     """
     # Load the template
     script = load_gimp_template("banner_generate_complete.py.template")
-    
+
     # Format the template with escaped values
     script = script.format(
         template_path=escape_string(template_path),
@@ -66,8 +113,9 @@ def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
         speaker_title=escape_string(speaker_title),
         date=escape_string(date),
         time=escape_string(time),
+        photo_path=escape_string(photo_path) if photo_path else "",
         output_xcf=escape_string(output_xcf),
         output_png=escape_string(output_png)
     )
-    
+
     return script
