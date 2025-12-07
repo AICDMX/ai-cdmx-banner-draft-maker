@@ -35,6 +35,7 @@ class BannerGeneratorAuto:
         default_config = {
             "template_directory": "",
             "last_template": "",
+            "last_templates": [],
             "output_directory": "",
             "title1": "",
             "title2": "",
@@ -44,10 +45,10 @@ class BannerGeneratorAuto:
             "time": "",
             "photo_path": ""
         }
-        
+
         if not self.config_file.exists():
             return default_config
-        
+
         try:
             with open(self.config_file, 'r') as f:
                 config = json.load(f)
@@ -251,94 +252,117 @@ class BannerGeneratorAuto:
         if not self.config.get("template_directory"):
             print("Error: No template directory configured. Please run the GUI first.", file=sys.stderr)
             return 1
-        
-        template_name = self.config.get("last_template", "")
-        if not template_name:
-            print("Error: No template selected. Please run the GUI first and select a template.", file=sys.stderr)
+
+        # Get template list - prefer multiple templates, fallback to single
+        template_names = self.config.get("last_templates", [])
+        if not template_names and self.config.get("last_template"):
+            template_names = [self.config.get("last_template", "")]
+
+        if not template_names:
+            print("Error: No templates selected. Please run the GUI first and select a template.", file=sys.stderr)
             return 1
-        
-        template_path = os.path.join(self.config["template_directory"], template_name)
-        if not os.path.exists(template_path):
-            print(f"Error: Template file not found: {template_path}", file=sys.stderr)
-            return 1
-        
+
         if not self.config.get("output_directory"):
             print("Error: No output directory configured. Please run the GUI first.", file=sys.stderr)
             return 1
-        
+
         if not self.config.get("title1"):
             print("Error: Title 1 is required. Please run the GUI first and fill in the form.", file=sys.stderr)
             return 1
-        
+
         if not self.config.get("speaker_name"):
             print("Error: Speaker Name is required. Please run the GUI first and fill in the form.", file=sys.stderr)
             return 1
-        
+
         if not self.config.get("date"):
             print("Error: Date is required. Please run the GUI first and fill in the form.", file=sys.stderr)
             return 1
-        
+
         if not self.config.get("time"):
             print("Error: Time is required. Please run the GUI first and fill in the form.", file=sys.stderr)
             return 1
-        
+
         photo_path = self.config.get("photo_path", "")
         if photo_path and not os.path.exists(photo_path):
             print(f"Error: Speaker photo not found: {photo_path}", file=sys.stderr)
             return 1
-        
-        # Build output filename
+
+        # Validate all templates exist
+        for template_name in template_names:
+            template_path = os.path.join(self.config["template_directory"], template_name)
+            if not os.path.exists(template_path):
+                print(f"Error: Template file not found: {template_path}", file=sys.stderr)
+                return 1
+
+        # Build common values
         date_text = self.config["date"]
         parsed_date = self.parse_date_from_text(date_text)
-
         title_slug = self.slugify(self.config["title1"], 10)
 
-        # Extract template name without extension and truncate to 10 chars
-        template_slug = self.slugify(os.path.splitext(template_name)[0], 10)
+        generated_count = 0
+        failed_count = 0
 
-        if parsed_date:
-            base_filename = f"{parsed_date}-{title_slug}-{template_slug}"
+        # Generate banners for all selected templates
+        for template_name in template_names:
+            template_path = os.path.join(self.config["template_directory"], template_name)
+            template_slug = self.slugify(os.path.splitext(template_name)[0], 10)
+
+            if parsed_date:
+                base_filename = f"{parsed_date}-{title_slug}-{template_slug}"
+            else:
+                base_filename = f"banner-{title_slug}-{template_slug}"
+
+            output_xcf = os.path.join(self.config["output_directory"], f"{base_filename}.xcf")
+            output_jpg = os.path.join(self.config["output_directory"], f"{base_filename}.jpg")
+
+            # Generate the banner
+            try:
+                print(f"Generating banner from template: {template_name}")
+                print(f"Output files:")
+                print(f"  XCF: {output_xcf}")
+                print(f"  JPG: {output_jpg}")
+                print()
+
+                self.update_banner(
+                    template_path=template_path,
+                    title1=self.config["title1"],
+                    title2=self.config.get("title2", ""),
+                    speaker_name=self.config["speaker_name"],
+                    speaker_title=self.config.get("speaker_title", ""),
+                    date=date_text,
+                    time=self.config["time"],
+                    photo_path=photo_path,
+                    output_xcf=output_xcf,
+                    output_jpg=output_jpg
+                )
+
+                print()
+                print("=" * 40)
+                print(f"✓ Banner generated successfully!")
+                print(f"  XCF: {base_filename}.xcf")
+                print(f"  JPG: {base_filename}.jpg")
+                print("=" * 40)
+                print()
+
+                generated_count += 1
+
+            except subprocess.CalledProcessError:
+                print(f"Error: Banner generation failed for {template_name}. See logs above.", file=sys.stderr)
+                failed_count += 1
+            except Exception as e:
+                print(f"Error: An unexpected error occurred for {template_name}: {e}", file=sys.stderr)
+                failed_count += 1
+
+        # Summary
+        print()
+        print("=" * 40)
+        print(f"Summary: Generated {generated_count}/{len(template_names)} banner(s)")
+        if failed_count > 0:
+            print(f"Failed: {failed_count} banner(s)")
+            print("=" * 40)
+            return 1
         else:
-            base_filename = f"banner-{title_slug}-{template_slug}"
-
-        output_xcf = os.path.join(self.config["output_directory"], f"{base_filename}.xcf")
-        output_jpg = os.path.join(self.config["output_directory"], f"{base_filename}.jpg")
-        
-        # Generate the banner
-        try:
-            print(f"Generating banner from template: {template_name}")
-            print(f"Output files:")
-            print(f"  XCF: {output_xcf}")
-            print(f"  JPG: {output_jpg}")
-            print()
-            
-            self.update_banner(
-                template_path=template_path,
-                title1=self.config["title1"],
-                title2=self.config.get("title2", ""),
-                speaker_name=self.config["speaker_name"],
-                speaker_title=self.config.get("speaker_title", ""),
-                date=date_text,
-                time=self.config["time"],
-                photo_path=photo_path,
-                output_xcf=output_xcf,
-                output_jpg=output_jpg
-            )
-            
-            print()
             print("=" * 40)
-            print("✓ Banner generated successfully!")
-            print(f"  XCF: {base_filename}.xcf")
-            print(f"  JPG: {base_filename}.jpg")
-            print("=" * 40)
-            
             return 0
-            
-        except subprocess.CalledProcessError:
-            print("Error: Banner generation failed. See logs above.", file=sys.stderr)
-            return 1
-        except Exception as e:
-            print(f"Error: An unexpected error occurred: {e}", file=sys.stderr)
-            return 1
 
 

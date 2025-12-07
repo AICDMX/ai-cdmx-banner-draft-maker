@@ -167,9 +167,6 @@ if "SpeakerPhoto" in layers:
         if new_layer is None:
             raise Exception("Failed to create layer from photo drawable")
 
-        # Resize the layer to match the scaled dimensions (layer should fit the scaled image)
-        new_layer.scale(new_width, new_height)
-
         # Insert layer just below the SpeakerPhoto placeholder layer
         # Get the parent of the SpeakerPhoto layer (handles groups)
         parent = photo_layer.get_parent()
@@ -198,6 +195,9 @@ if "SpeakerPhoto" in layers:
         else:
             # If no parent, insert at position 0 at root
             image.insert_layer(new_layer, None, 0)
+
+        # Resize the layer to match the scaled dimensions (AFTER inserting into image)
+        new_layer.scale(new_width, new_height)
 
         # Position the photo at the placeholder location
         # If the image is larger than the placeholder, center it so it fills the area

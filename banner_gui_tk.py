@@ -138,11 +138,13 @@ class BannerGeneratorGUI:
         row += 1
         
         # Template Selection
-        ttk.Label(main_frame, text="Select Template:").grid(
+        ttk.Label(main_frame, text="Select Template(s):", font=('', 10)).grid(
             row=row, column=0, sticky=tk.W, pady=(5, 5))
+        ttk.Label(main_frame, text="(Use Ctrl+click to select multiple)", font=('', 8, 'italic')).grid(
+            row=row, column=1, columnspan=2, sticky=tk.E, pady=(5, 5))
         row += 1
-        
-        self.template_listbox = tk.Listbox(main_frame, height=4, width=50)
+
+        self.template_listbox = tk.Listbox(main_frame, height=4, width=50, selectmode=tk.EXTENDED)
         self.template_listbox.grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 5))
         self.template_listbox.bind('<<ListboxSelect>>', self.on_template_selected)
         ttk.Button(main_frame, text="Refresh", command=self.refresh_templates).grid(
@@ -268,6 +270,7 @@ class BannerGeneratorGUI:
         default_config = {
             "template_directory": "",
             "last_template": "",
+            "last_templates": [],
             "output_directory": "",
             "title1": "",
             "title2": "",
@@ -277,10 +280,10 @@ class BannerGeneratorGUI:
             "time": "",
             "photo_path": ""
         }
-        
+
         if not self.config_file.exists():
             return default_config
-        
+
         try:
             with open(self.config_file, 'r') as f:
                 config = json.load(f)
@@ -292,16 +295,26 @@ class BannerGeneratorGUI:
     
     def save_config(self):
         """Save current configuration to JSON file"""
-        # Get current template selection
+        # Get current template selections
+        selected_templates = self.get_selected_templates()
         selected_template = self.get_selected_template()
 
-        # If no template is currently selected, preserve the last saved template
-        if not selected_template:
+        # If no templates are currently selected, preserve the last saved templates
+        if not selected_templates:
+            selected_templates = self.config.get("last_templates", [])
+            if not selected_templates and self.config.get("last_template"):
+                selected_templates = [self.config.get("last_template", "")]
+
+        # For backward compatibility, also keep the first template as "last_template"
+        if selected_templates:
+            selected_template = selected_templates[0]
+        elif not selected_template:
             selected_template = self.config.get("last_template", "")
 
         config = {
             "template_directory": self.template_dir_var.get(),
             "last_template": selected_template,
+            "last_templates": selected_templates,
             "output_directory": self.output_dir_var.get(),
             "title1": self.title1_entry.get(),
             "title2": self.title2_entry.get(),
@@ -314,10 +327,10 @@ class BannerGeneratorGUI:
 
         # Update self.config so refresh_templates() uses the latest value
         self.config.update(config)
-        
+
         # Create config directory if it doesn't exist
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        
+
         try:
             with open(self.config_file, 'w') as f:
                 json.dump(config, f, indent=2)
@@ -329,14 +342,14 @@ class BannerGeneratorGUI:
         # Restore template directory
         if self.config.get("template_directory"):
             self.template_dir_var.set(self.config["template_directory"])
-            # refresh_templates() will restore the last_template from config
+            # refresh_templates() will restore the last_templates from config
             self.refresh_templates()
-        
+
         # Restore output directory
         if self.config.get("output_directory"):
             self.output_dir_var.set(self.config["output_directory"])
             self.last_output_dir = self.config["output_directory"]
-        
+
         # Restore all event fields
         if self.config.get("title1"):
             self.title1_entry.insert(0, self.config["title1"])
@@ -355,11 +368,18 @@ class BannerGeneratorGUI:
             self.photo_path_var.set(self.config["photo_path"])
     
     def get_selected_template(self) -> str:
-        """Get the currently selected template name"""
+        """Get the first selected template name (for compatibility)"""
         selection = self.template_listbox.curselection()
         if selection:
             return self.template_listbox.get(selection[0])
         return ""
+
+    def get_selected_templates(self) -> list:
+        """Get all selected template names"""
+        selection = self.template_listbox.curselection()
+        if selection:
+            return [self.template_listbox.get(i) for i in selection]
+        return []
     
     def select_template_by_name(self, template_name: str):
         """Select a template in the listbox by name"""
@@ -369,7 +389,21 @@ class BannerGeneratorGUI:
                 self.template_listbox.selection_set(i)
                 self.template_listbox.see(i)
                 break
-    
+
+    def select_templates_by_names(self, template_names: list):
+        """Select multiple templates in the listbox by names"""
+        self.template_listbox.selection_clear(0, tk.END)
+        first_index = None
+        for template_name in template_names:
+            for i in range(self.template_listbox.size()):
+                if self.template_listbox.get(i) == template_name:
+                    self.template_listbox.selection_set(i)
+                    if first_index is None:
+                        first_index = i
+                    break
+        if first_index is not None:
+            self.template_listbox.see(first_index)
+
     def on_template_selected(self, event):
         """Handle template selection event"""
         # Only save during user interaction, not during initialization
@@ -399,8 +433,8 @@ class BannerGeneratorGUI:
     
     def refresh_templates(self):
         """Refresh the list of available templates"""
-        # Remember current selection before clearing
-        current_selection = self.get_selected_template()
+        # Remember current selections before clearing
+        current_selections = self.get_selected_templates()
 
         self.template_listbox.delete(0, tk.END)
         template_dir = self.template_dir_var.get()
@@ -414,17 +448,29 @@ class BannerGeneratorGUI:
         for template in templates:
             self.template_listbox.insert(tk.END, template)
 
-        # Try to restore the last selected template if it still exists
+        # Try to restore the last selected templates if they still exist
         # Use the saved config value, which should be up-to-date
-        last_template = self.config.get("last_template", "")
-        if last_template and last_template in templates:
-            self.select_template_by_name(last_template)
-        elif current_selection and current_selection in templates:
-            # If current selection still exists, keep it
-            self.select_template_by_name(current_selection)
-            # Save this selection to config
-            self.config["last_template"] = current_selection
-            self.save_config()
+        last_templates = self.config.get("last_templates", [])
+
+        # Fallback to single template for backward compatibility
+        if not last_templates and self.config.get("last_template"):
+            last_templates = [self.config.get("last_template", "")]
+
+        # Restore all saved templates that still exist
+        if last_templates:
+            for template_name in last_templates:
+                if template_name in templates:
+                    self.select_templates_by_names([t for t in last_templates if t in templates])
+                    break
+        elif current_selections:
+            # If current selections still exist, keep them
+            valid_selections = [t for t in current_selections if t in templates]
+            if valid_selections:
+                self.select_templates_by_names(valid_selections)
+                # Save these selections to config
+                self.config["last_templates"] = valid_selections
+                self.config["last_template"] = valid_selections[0]
+                self.save_config()
     
     def browse_output_dir(self):
         """Browse for output directory"""
@@ -557,7 +603,7 @@ class BannerGeneratorGUI:
     
     
     def generate_banner(self):
-        """Main function to generate the banner"""
+        """Main function to generate the banner(s) for selected template(s)"""
         # Remember the time value for next use
         time_value = self.time_entry.get()
         if time_value:
@@ -568,16 +614,9 @@ class BannerGeneratorGUI:
             self.display_message("⚠ Error: Please select a template directory")
             return
 
-        selection = self.template_listbox.curselection()
-        if not selection:
-            self.display_message("⚠ Error: Please select a template")
-            return
-
-        template_name = self.template_listbox.get(selection[0])
-        template_path = os.path.join(self.template_dir_var.get(), template_name)
-
-        if not os.path.exists(template_path):
-            self.display_message(f"⚠ Error: Template file not found: {template_path}")
+        selected_templates = self.get_selected_templates()
+        if not selected_templates:
+            self.display_message("⚠ Error: Please select at least one template")
             return
 
         if not self.output_dir_var.get():
@@ -605,49 +644,63 @@ class BannerGeneratorGUI:
         if photo_path and not os.path.exists(photo_path):
             self.display_message(f"⚠ Error: Speaker photo not found: {photo_path}")
             return
-        
-        # Build output filename
+
+        # Validate all selected templates exist
+        for template_name in selected_templates:
+            template_path = os.path.join(self.template_dir_var.get(), template_name)
+            if not os.path.exists(template_path):
+                self.display_message(f"⚠ Error: Template file not found: {template_path}")
+                return
+
+        # Generate banners for all selected templates
         date_text = self.date_entry.get()
         parsed_date = self.parse_date_from_text(date_text)
-
         title_slug = self.slugify(self.title1_entry.get(), 10)
 
-        # Extract template name without extension and truncate to 10 chars
-        template_slug = self.slugify(os.path.splitext(template_name)[0], 10)
+        generated_files = []
 
-        if parsed_date:
-            base_filename = f"{parsed_date}-{title_slug}-{template_slug}"
-        else:
-            base_filename = f"banner-{title_slug}-{template_slug}"
-
-        output_xcf = os.path.join(self.output_dir_var.get(), f"{base_filename}.xcf")
-        output_jpg = os.path.join(self.output_dir_var.get(), f"{base_filename}.jpg")
-        
-        # Generate the banner using headless GIMP
         try:
-            self.update_banner(
-                template_path=template_path,
-                title1=self.title1_entry.get(),
-                title2=self.title2_entry.get(),
-                speaker_name=self.speaker_name_entry.get(),
-                speaker_title=self.speaker_title_entry.get(),
-                date=date_text,
-                time=self.time_entry.get(),
-                photo_path=photo_path,
-                output_xcf=output_xcf,
-                output_jpg=output_jpg
-            )
-            
-            # Save config with current template and settings
+            for template_name in selected_templates:
+                template_path = os.path.join(self.template_dir_var.get(), template_name)
+                template_slug = self.slugify(os.path.splitext(template_name)[0], 10)
+
+                if parsed_date:
+                    base_filename = f"{parsed_date}-{title_slug}-{template_slug}"
+                else:
+                    base_filename = f"banner-{title_slug}-{template_slug}"
+
+                output_xcf = os.path.join(self.output_dir_var.get(), f"{base_filename}.xcf")
+                output_jpg = os.path.join(self.output_dir_var.get(), f"{base_filename}.jpg")
+
+                self.display_message(f"Generating banner with template: {template_name}...")
+
+                self.update_banner(
+                    template_path=template_path,
+                    title1=self.title1_entry.get(),
+                    title2=self.title2_entry.get(),
+                    speaker_name=self.speaker_name_entry.get(),
+                    speaker_title=self.speaker_title_entry.get(),
+                    date=date_text,
+                    time=self.time_entry.get(),
+                    photo_path=photo_path,
+                    output_xcf=output_xcf,
+                    output_jpg=output_jpg
+                )
+
+                generated_files.append((base_filename, output_xcf))
+                self.display_message(f"✓ Generated: {base_filename}")
+
+            # Save config with current settings
             self.save_config()
 
-            # Display success message in status area
-            success_msg = f"✓ Banner generated!\nXCF: {base_filename}.xcf\nJPG: {base_filename}.jpg\nOpening in GIMP..."
-            self.display_message(success_msg)
+            # Display summary message
+            summary = f"✓ Successfully generated {len(generated_files)} banner(s)!"
+            self.display_message(summary)
 
-            # Open the XCF in GIMP for manual editing
-            subprocess.Popen(['gimp', output_xcf])
-            
+            # Open all generated XCF files in GIMP
+            for _, output_xcf in generated_files:
+                subprocess.Popen(['gimp', output_xcf])
+
         except subprocess.CalledProcessError:
             # Error already shown in copyable popup by update_banner, no need to show another
             pass
