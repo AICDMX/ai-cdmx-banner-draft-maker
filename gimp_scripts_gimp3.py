@@ -82,7 +82,7 @@ def build_gimp_command(script_file: str) -> list:
 
 def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
                                   speaker_title, date, time, photo_path,
-                                  output_xcf, output_png):
+                                  output_xcf, output_jpg):
     """
     Generate a GIMP 3.0 compatible Python script for banner generation.
 
@@ -96,7 +96,7 @@ def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
         time: Time text
         photo_path: Path to speaker photo (optional)
         output_xcf: Output path for XCF file
-        output_png: Output path for PNG file
+        output_jpg: Output path for JPG file
 
     Returns:
         Python script string for GIMP 3.0
@@ -115,7 +115,7 @@ def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
         time=escape_string(time),
         photo_path=escape_string(photo_path) if photo_path else "",
         output_xcf=escape_string(output_xcf),
-        output_png=escape_string(output_png)
+        output_jpg=escape_string(output_jpg)
     )
 
     return script

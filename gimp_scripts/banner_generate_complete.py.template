@@ -21,14 +21,43 @@ except Exception as e:
     print(f"Error loading template: {{e}}")
     image = None
 
-# Build layer dictionary
+# Build layer dictionary (including layers in groups)
 layers = {{}}
+def collect_layers(parent):
+    """Recursively collect all layers including those in groups"""
+    collected = {{}}
+    try:
+        for item in parent.get_layers():
+            collected[item.get_name()] = item
+            # If it's a group (layer group), recurse into it
+            try:
+                if item.is_group():
+                    # Try different methods to get children
+                    children = None
+                    try:
+                        # Try get_children() first (GIMP 3.0)
+                        children = item.get_children()
+                    except:
+                        try:
+                            # Try get_layers() (alternative)
+                            children = item.get_layers()
+                        except:
+                            pass
+
+                    if children:
+                        for child in children:
+                            collected[child.get_name()] = child
+            except AttributeError:
+                pass
+    except Exception as e:
+        print(f"Error in collect_layers: {{e}}")
+    return collected
+
 if image:
     try:
-        for layer in image.get_layers():
-            layers[layer.get_name()] = layer
+        layers = collect_layers(image)
     except Exception as e:
-        print(f"Error listing layers: {{e}}")
+        print(f"Error collecting layers: {{e}}")
 
 # Update text layers - use gimp-item-edit-text to preserve formatting
 text_fields = {{
@@ -53,27 +82,15 @@ for layer_name, text_value in text_fields.items():
                     config.set_property("item", layer)
                     config.set_property("text", text_value)
                     proc.run(config)
-                except:
-                    # Fall back to gimp-text-layer-set-text if gimp-item-edit-text fails
-                    proc = pdb.lookup_procedure("gimp-text-layer-set-text")
-                    if proc:
-                        config = proc.create_config()
-                        config.set_property("layer", layer)
-                        config.set_property("text", text_value)
-                        proc.run(config)
+                except Exception as e:
+                    pass
             else:
-                # Try gimp-text-layer-set-text directly
-                proc = pdb.lookup_procedure("gimp-text-layer-set-text")
-                if proc:
-                    config = proc.create_config()
-                    config.set_property("layer", layer)
-                    config.set_property("text", text_value)
-                    proc.run(config)
+                pass
 
         except Exception as e:
-            print(f"Warning: Could not update layer '{{layer_name}}': {{e}}")
+            pass
     else:
-        print(f"Warning: Layer '{{layer_name}}' not found in template")
+        pass
 
 # Handle speaker photo if SpeakerPhoto layer exists
 # This section is conditionally executed based on template structure
@@ -115,10 +132,11 @@ if "SpeakerPhoto" in layers:
         photo_width = photo_drawable.get_width()
         photo_height = photo_drawable.get_height()
 
-        # Scale the photo to fit the placeholder (maintaining aspect ratio)
+        # Scale the photo to fill the placeholder (maintaining aspect ratio)
+        # Using max instead of min ensures the image covers the entire area
         scale_w = float(placeholder_width) / photo_width
         scale_h = float(placeholder_height) / photo_height
-        scale = min(scale_w, scale_h)
+        scale = max(scale_w, scale_h)
 
         new_width = int(photo_width * scale)
         new_height = int(photo_height * scale)
@@ -137,14 +155,48 @@ if "SpeakerPhoto" in layers:
         if new_layer is None:
             raise Exception("Failed to create layer from photo drawable")
 
-        # Insert layer using GIMP 3.0 API
-        image.insert_layer(new_layer, None, 0)
+        # Resize the layer to match the scaled dimensions (layer should fit the scaled image)
+        new_layer.scale(new_width, new_height)
 
-        # Position the photo at the placeholder location (centered)
+        # Insert layer just below the SpeakerPhoto placeholder layer
+        # Get the parent of the SpeakerPhoto layer (handles groups)
+        parent = photo_layer.get_parent()
+
+        # Insert the layer - try to insert into the same group
+        if parent:
+            # Try to find the index of the photo_layer within parent
+            try:
+                # Try get_children() for GroupLayer
+                children = parent.get_children()
+                photo_index = None
+                if children:
+                    for i, child in enumerate(children):
+                        if child.get_name() == photo_layer.get_name():
+                            photo_index = i
+                            break
+
+                if photo_index is not None:
+                    image.insert_layer(new_layer, parent, photo_index + 1)
+                else:
+                    # Fallback: insert at position 0 in the group
+                    image.insert_layer(new_layer, parent, 0)
+            except:
+                # If get_children() fails, try inserting at root
+                image.insert_layer(new_layer, None, 0)
+        else:
+            # If no parent, insert at position 0 at root
+            image.insert_layer(new_layer, None, 0)
+
+        # Position the photo at the placeholder location
+        # If the image is larger than the placeholder, center it so it fills the area
         offset_x = placeholder_x + (placeholder_width - new_width) // 2
         offset_y = placeholder_y + (placeholder_height - new_height) // 2
 
         new_layer.set_offsets(offset_x, offset_y)
+
+        # Set composite mode to "Clip to Backdrop"
+        new_layer.set_blend_space(Gimp.LayerColorSpace.AUTO)
+        new_layer.set_composite_mode(Gimp.LayerCompositeMode.CLIP_TO_BACKDROP)
 
         # Rename the new layer
         new_layer.set_name("SpeakerPhoto_Inserted")
@@ -174,7 +226,7 @@ if image:
     except Exception as e:
         print(f"Warning: XCF save failed: {{e}}")
 
-# Flatten and save as PNG
+# Flatten and save as JPG
 if image:
     try:
         print("Creating duplicate image for flattening...")
@@ -197,15 +249,15 @@ if image:
                 proc.run(config)
                 print("Image flattened successfully")
 
-                # Save as PNG
+                # Save as JPG
                 try:
                     # Try multiple possible procedure names for GIMP 3.0
                     procedures_to_try = [
                         "gimp-file-save",
                         "gimp-image-export-as",
-                        "file-png-save-defaults",
-                        "file-png-save",
-                        "png-save"
+                        "file-jpeg-save",
+                        "file-jpeg-save-defaults",
+                        "jpeg-save"
                     ]
 
                     proc = None
@@ -217,7 +269,7 @@ if image:
                     if proc:
                         config = proc.create_config()
                         config.set_property("image", flat_image)
-                        file_obj = Gio.File.new_for_path("{output_png}")
+                        file_obj = Gio.File.new_for_path("{output_jpg}")
                         config.set_property("file", file_obj)
 
                         # Try to set run-mode if available
@@ -228,9 +280,9 @@ if image:
 
                         proc.run(config)
                     else:
-                        print("Warning: No PNG export procedure found")
+                        print("Warning: No JPG export procedure found")
                 except Exception as e:
-                    print("Warning: PNG save failed: " + str(e))
+                    print("Warning: JPG save failed: " + str(e))
 
                 # Clean up flat image
                 print("Cleaning up duplicate image...")
@@ -245,7 +297,7 @@ if image:
         else:
             print("ERROR: gimp-image-duplicate procedure not found!")
     except Exception as e:
-        print(f"ERROR: PNG processing failed: {{e}}")
+        print(f"ERROR: JPG processing failed: {{e}}")
         import traceback
         traceback.print_exc()
 

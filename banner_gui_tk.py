@@ -621,7 +621,7 @@ class BannerGeneratorGUI:
             base_filename = f"banner-{title_slug}-{template_slug}"
 
         output_xcf = os.path.join(self.output_dir_var.get(), f"{base_filename}.xcf")
-        output_png = os.path.join(self.output_dir_var.get(), f"{base_filename}.png")
+        output_jpg = os.path.join(self.output_dir_var.get(), f"{base_filename}.jpg")
         
         # Generate the banner using headless GIMP
         try:
@@ -635,14 +635,14 @@ class BannerGeneratorGUI:
                 time=self.time_entry.get(),
                 photo_path=photo_path,
                 output_xcf=output_xcf,
-                output_png=output_png
+                output_jpg=output_jpg
             )
             
             # Save config with current template and settings
             self.save_config()
 
             # Display success message in status area
-            success_msg = f"✓ Banner generated!\nXCF: {base_filename}.xcf\nPNG: {base_filename}.png\nOpening in GIMP..."
+            success_msg = f"✓ Banner generated!\nXCF: {base_filename}.xcf\nJPG: {base_filename}.jpg\nOpening in GIMP..."
             self.display_message(success_msg)
 
             # Open the XCF in GIMP for manual editing
@@ -658,7 +658,7 @@ class BannerGeneratorGUI:
     
     def generate_banner_script(self, template_path: str, title1: str, title2: str,
                                speaker_name: str, speaker_title: str, date: str, time: str,
-                               photo_path: str, output_xcf: str, output_png: str) -> str:
+                               photo_path: str, output_xcf: str, output_jpg: str) -> str:
         """
         Generate GIMP script for updating banner template.
         Uses the shared generate_banner_script_gimp3() function to ensure both GUI and auto
@@ -675,20 +675,20 @@ class BannerGeneratorGUI:
             time=time,
             photo_path=photo_path,
             output_xcf=output_xcf,
-            output_png=output_png
+            output_jpg=output_jpg
         )
     
-    def update_banner(self, template_path: str, title1: str, title2: str, 
+    def update_banner(self, template_path: str, title1: str, title2: str,
                      speaker_name: str, speaker_title: str, date: str, time: str,
-                     photo_path: str, output_xcf: str, output_png: str):
+                     photo_path: str, output_xcf: str, output_jpg: str):
         """
         Use headless GIMP to update the template with provided values.
-        Saves both XCF (with layers) and PNG (flattened) versions.
+        Saves both XCF (with layers) and JPG (flattened) versions.
         """
         # Generate the script
         script = self.generate_banner_script(
             template_path, title1, title2, speaker_name, speaker_title,
-            date, time, photo_path, output_xcf, output_png
+            date, time, photo_path, output_xcf, output_jpg
         )
         
         # Write script to a temporary file

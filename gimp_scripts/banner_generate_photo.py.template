@@ -37,10 +37,11 @@ if "SpeakerPhoto" in layers:
     photo_width = photo_drawable.get_width()
     photo_height = photo_drawable.get_height()
 
-    # Scale the photo to fit the placeholder (maintaining aspect ratio)
+    # Scale the photo to fill the placeholder (maintaining aspect ratio)
+    # Using max instead of min ensures the image covers the entire area
     scale_w = float(placeholder_width) / photo_width
     scale_h = float(placeholder_height) / photo_height
-    scale = min(scale_w, scale_h)
+    scale = max(scale_w, scale_h)
 
     new_width = int(photo_width * scale)
     new_height = int(photo_height * scale)
@@ -59,15 +60,48 @@ if "SpeakerPhoto" in layers:
     if new_layer is None:
         raise Exception("Failed to create layer from photo drawable")
 
-    # Insert layer using GIMP 3.0 API
-    image.insert_layer(new_layer, None, 0)
+    # Resize the layer to match the scaled dimensions (layer should fit the scaled image)
+    new_layer.scale(new_width, new_height)
+
+    # Insert layer just below the SpeakerPhoto placeholder layer
+    # Get the parent of the SpeakerPhoto layer (handles groups)
+    parent = photo_layer.get_parent()
+
+    # Insert the layer - try to insert into the same group
+    if parent:
+        # Try to find the index of the photo_layer within parent
+        try:
+            # Try get_children() for GroupLayer
+            children = parent.get_children()
+            photo_index = None
+            if children:
+                for i, child in enumerate(children):
+                    if child.get_name() == photo_layer.get_name():
+                        photo_index = i
+                        break
+
+            if photo_index is not None:
+                image.insert_layer(new_layer, parent, photo_index + 1)
+            else:
+                # Fallback: insert at position 0 in the group
+                image.insert_layer(new_layer, parent, 0)
+        except:
+            # If get_children() fails, try inserting at root
+            image.insert_layer(new_layer, None, 0)
+    else:
+        # If no parent, insert at position 0 at root
+        image.insert_layer(new_layer, None, 0)
 
     # Position the photo at the placeholder location (centered)
     offset_x = placeholder_x + (placeholder_width - new_width) // 2
     offset_y = placeholder_y + (placeholder_height - new_height) // 2
 
     new_layer.set_offsets(offset_x, offset_y)
-    
+
+    # Set composite mode to "Clip to Backdrop"
+    new_layer.set_blend_space(Gimp.LayerColorSpace.AUTO)
+    new_layer.set_composite_mode(Gimp.LayerCompositeMode.CLIP_TO_BACKDROP)
+
     # Rename the new layer
     new_layer.set_name("SpeakerPhoto_Inserted")
     

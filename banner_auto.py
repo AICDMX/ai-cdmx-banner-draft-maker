@@ -156,12 +156,12 @@ class BannerGeneratorAuto:
 
     def update_banner(self, template_path: str, title1: str, title2: str,
                      speaker_name: str, speaker_title: str, date: str, time: str,
-                     photo_path: str, output_xcf: str, output_png: str):
+                     photo_path: str, output_xcf: str, output_jpg: str):
         """Use headless GIMP to update the template with provided values."""
         # Generate script using the shared function
         script = generate_banner_script_gimp3(
             template_path, title1, title2, speaker_name, speaker_title,
-            date, time, photo_path, output_xcf, output_png
+            date, time, photo_path, output_xcf, output_jpg
         )
 
         import tempfile
@@ -302,14 +302,14 @@ class BannerGeneratorAuto:
             base_filename = f"banner-{title_slug}-{template_slug}"
 
         output_xcf = os.path.join(self.config["output_directory"], f"{base_filename}.xcf")
-        output_png = os.path.join(self.config["output_directory"], f"{base_filename}.png")
+        output_jpg = os.path.join(self.config["output_directory"], f"{base_filename}.jpg")
         
         # Generate the banner
         try:
             print(f"Generating banner from template: {template_name}")
             print(f"Output files:")
             print(f"  XCF: {output_xcf}")
-            print(f"  PNG: {output_png}")
+            print(f"  JPG: {output_jpg}")
             print()
             
             self.update_banner(
@@ -322,14 +322,14 @@ class BannerGeneratorAuto:
                 time=self.config["time"],
                 photo_path=photo_path,
                 output_xcf=output_xcf,
-                output_png=output_png
+                output_jpg=output_jpg
             )
             
             print()
             print("=" * 40)
             print("✓ Banner generated successfully!")
             print(f"  XCF: {base_filename}.xcf")
-            print(f"  PNG: {base_filename}.png")
+            print(f"  JPG: {base_filename}.jpg")
             print("=" * 40)
             
             return 0
@@ -339,7 +339,6 @@ class BannerGeneratorAuto:
             return 1
         except Exception as e:
             print(f"Error: An unexpected error occurred: {e}", file=sys.stderr)
-            print(f"{type(e).__name__}: {str(e)}", file=sys.stderr)
             return 1
 
 
