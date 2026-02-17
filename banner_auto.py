@@ -279,8 +279,7 @@ class BannerGeneratorAuto:
             return 1
 
         if not self.config.get("time"):
-            print("Error: Time is required. Please run the GUI first and fill in the form.", file=sys.stderr)
-            return 1
+            self.config["time"] = "6-8PM"
 
         photo_path = self.config.get("photo_path", "")
         if photo_path and not os.path.exists(photo_path):
