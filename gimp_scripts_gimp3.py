@@ -82,7 +82,8 @@ def build_gimp_command(script_file: str) -> list:
 
 def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
                                   speaker_title, date, time, photo_path,
-                                  output_xcf, output_jpg, hide_layers=None):
+                                  output_xcf, output_jpg, hide_layers=None,
+                                  auto_fit_layers=None):
     """
     Generate a GIMP 3.0 compatible Python script for banner generation.
 
@@ -110,6 +111,11 @@ def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
         '"' + escape_string(n) + '"' for n in hide_layers
     ) + "]"
 
+    auto_fit_layers = auto_fit_layers or []
+    auto_fit_layers_literal = "[" + ", ".join(
+        '"' + escape_string(n) + '"' for n in auto_fit_layers
+    ) + "]"
+
     # Format the template with escaped values
     script = script.format(
         template_path=escape_string(template_path),
@@ -123,6 +129,7 @@ def generate_banner_script_gimp3(template_path, title1, title2, speaker_name,
         output_xcf=escape_string(output_xcf),
         output_jpg=escape_string(output_jpg),
         hide_layers=hide_layers_literal,
+        auto_fit_layers=auto_fit_layers_literal,
     )
 
     return script

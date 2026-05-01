@@ -82,6 +82,46 @@ text_fields = {{
     "Time": "{time}"
 }}
 
+# Auto-fit: text layers in templates are fixed-size, so setting longer text
+# silently clips. To detect overflow, build a temp dynamic TextLayer with the
+# new text and current font, measure its rendered width, and shrink the real
+# layer's font size if it would overflow the placeholder width.
+auto_fit_layer_names = {auto_fit_layers}
+auto_fit_margin = 0.95
+for fit_name in auto_fit_layer_names:
+    if fit_name not in layers:
+        continue
+    target_text = text_fields.get(fit_name, "")
+    if not target_text:
+        continue
+    layer = layers[fit_name]
+    try:
+        orig_w = layer.get_width()
+        font = layer.get_font()
+        size_tup = layer.get_font_size()
+        try:
+            font_size, font_unit = size_tup
+        except Exception:
+            font_size, font_unit = size_tup[0], size_tup[1]
+        if not orig_w or font is None or font_size is None:
+            continue
+        # Measure target text at current font size.
+        try:
+            tmp = Gimp.TextLayer.new(image, target_text, font, font_size, font_unit)
+            measured_w = tmp.get_width()
+        except Exception as e:
+            print(f"auto-fit measure failed for '{{fit_name}}': {{e}}")
+            continue
+        if measured_w > orig_w:
+            new_size = font_size * (orig_w / measured_w) * auto_fit_margin
+            try:
+                layer.set_font_size(new_size, font_unit)
+                print(f"auto-fit: '{{fit_name}}' {{font_size:.1f}} -> {{new_size:.1f}} (placeholder={{orig_w}}, measured={{measured_w}})")
+            except Exception as e:
+                print(f"auto-fit set-size failed for '{{fit_name}}': {{e}}")
+    except Exception as e:
+        print(f"auto-fit failed for '{{fit_name}}': {{e}}")
+
 for layer_name, text_value in text_fields.items():
     if layer_name in layers:
         try:

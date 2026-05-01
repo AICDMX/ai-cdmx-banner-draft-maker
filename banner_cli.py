@@ -73,6 +73,9 @@ See docs/cmdline.md for full documentation.
                        dest='hide_layers',
                        help='Hide a layer (or layer group) by name. Repeatable. '
                             'Use to omit venue/sponsor logos for off-template events.')
+    parser.add_argument('--no-auto-fit', action='store_true',
+                       help='Disable auto-shrinking of Title1, SpeakerName, and SpeakerTitle '
+                            'when rendered text is wider than the placeholder.')
 
     # Output control
     parser.add_argument('--quiet', '-q', action='store_true',
@@ -159,6 +162,7 @@ See docs/cmdline.md for full documentation.
                 output_xcf=output_xcf,
                 output_jpg=output_jpg,
                 hide_layers=args.hide_layers,
+                auto_fit_layers=[] if args.no_auto_fit else ["Title1", "SpeakerName", "SpeakerTitle"],
             )
             generated_count += 1
             if not args.quiet:
