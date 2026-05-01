@@ -59,6 +59,19 @@ if image:
     except Exception as e:
         print(f"Error collecting layers: {{e}}")
 
+# Hide requested layers (e.g. venue/sponsor logos for off-template events).
+# Hiding a group hides everything inside it.
+hide_layer_names = {hide_layers}
+for hide_name in hide_layer_names:
+    if hide_name in layers:
+        try:
+            layers[hide_name].set_visible(False)
+            print(f"Hid layer: {{hide_name}}")
+        except Exception as e:
+            print(f"Warning: failed to hide layer '{{hide_name}}': {{e}}")
+    else:
+        print(f"Warning: hide-layer '{{hide_name}}' not found in template")
+
 # Update text layers - use gimp-item-edit-text to preserve formatting
 text_fields = {{
     "Title1": "{title1}",

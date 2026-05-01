@@ -69,6 +69,10 @@ See docs/cmdline.md for full documentation.
                        help='Speaker title/affiliation')
     parser.add_argument('--photo', metavar='FILE',
                        help='Speaker photo file')
+    parser.add_argument('--hide-layer', action='append', default=[], metavar='NAME',
+                       dest='hide_layers',
+                       help='Hide a layer (or layer group) by name. Repeatable. '
+                            'Use to omit venue/sponsor logos for off-template events.')
 
     # Output control
     parser.add_argument('--quiet', '-q', action='store_true',
@@ -153,7 +157,8 @@ See docs/cmdline.md for full documentation.
                 time=args.time,
                 photo_path=photo_path,
                 output_xcf=output_xcf,
-                output_jpg=output_jpg
+                output_jpg=output_jpg,
+                hide_layers=args.hide_layers,
             )
             generated_count += 1
             if not args.quiet:

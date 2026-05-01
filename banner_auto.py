@@ -157,12 +157,14 @@ class BannerGeneratorAuto:
 
     def update_banner(self, template_path: str, title1: str, title2: str,
                      speaker_name: str, speaker_title: str, date: str, time: str,
-                     photo_path: str, output_xcf: str, output_jpg: str):
+                     photo_path: str, output_xcf: str, output_jpg: str,
+                     hide_layers: list = None):
         """Use headless GIMP to update the template with provided values."""
         # Generate script using the shared function
         script = generate_banner_script_gimp3(
             template_path, title1, title2, speaker_name, speaker_title,
-            date, time, photo_path, output_xcf, output_jpg
+            date, time, photo_path, output_xcf, output_jpg,
+            hide_layers=hide_layers or [],
         )
 
         import tempfile
