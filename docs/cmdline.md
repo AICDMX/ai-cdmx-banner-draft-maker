@@ -1,4 +1,9 @@
-# Command Line Interface
+# Command Line Interface (GIMP path — legacy)
+
+> **This documents the legacy GIMP template path (`banner_cli.py`).** The primary,
+> recommended way to generate banners is now the image-generation API path
+> (`banner_api_cli.py`) — see [docs/api-cli.md](api-cli.md). Use this GIMP path when you
+> need the exact logo/photo files placed precisely into an `.xcf` template.
 
 The GIMP Banner Generator can be used entirely from the command line without launching the GUI.
 
