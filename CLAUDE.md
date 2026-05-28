@@ -4,20 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GIMP Banner Generator - A GUI tool for generating event banners from GIMP templates with automated text and image placement. Uses Python/Tkinter interface to populate GIMP `.xcf` templates and export both `.xcf` and `.png` versions.
+Event banner generator for AI CDMX. Two paths:
+
+1. **API path (PRIMARY)** — `banner_api_cli.py`: event data + speaker photo + logos →
+   an image-generation API (OpenAI `gpt-image-2` via the Responses API, or Google Gemini
+   `gemini-3.x` image models) produces the whole banner (16:9 1200×675 or square 1:1
+   1080×1080). Needs `pip install -e .[api]` and API keys from the env (direnv / `.env`).
+   Full docs: **`docs/api-cli.md`**.
+2. **GIMP path (legacy)** — Python/Tkinter GUI + `banner_cli.py` that populate GIMP `.xcf`
+   templates and export `.xcf` + `.jpg`. Kept for pixel-exact logo/photo placement.
 
 ## Commands
 
 ```bash
+# --- API path (primary) ---
+pip install -e .[api]            # openai, google-genai, pillow (one-time)
+cp .env.example .env && direnv allow   # add OPENAI_API_KEY / GEMINI_API_KEY
+
+# What to pass in: event fields + --photo + AI CDMX logo + the combined partner strip
+python3 banner_api_cli.py -o ./out --backend openai \
+    --title1 "Event" --subtitle "..." \
+    --speaker-name "Name" --speaker-title "Role" \
+    --date "Aug 18" --time "6 PM" --location "Presencial + YouTube en vivo · CDMX" \
+    --photo "/path/to/speaker.png" \
+    --logo "AI CDMX=~/Dropbox/events/ia-cdmx/Visual Assets/Logos/AI CDMX transparent logo (1024 × 1024 px).png" \
+    --logo "partners=~/Dropbox/events/ia-cdmx/Visual Assets/casa-rafael-galvan/partner-logos-strip-blanco.png"
+# add --square --from-banner <16x9.png> for the 1:1 social version
+# add --dry-run to preview the prompt without an API call (no key needed)
+
+# Rebuild the partner-logo strip from source logos (tools/build_partner_strip.py)
+python3 tools/build_partner_strip.py -o partners.png logoA.png logoB.png ...
+
+# --- GIMP path (legacy) ---
 make run          # Run the GUI application (verifies prerequisites first)
 make run-auto     # Run in auto mode using saved config (no GUI)
 make check        # Verify Python, tkinter, and GIMP are installed
 make clean        # Remove __pycache__, .pyc files, pytest/mypy caches
-
-# CLI usage (see docs/cmdline.md for full documentation)
-python3 banner_cli.py \
-    -T "~/Dropbox/events/ia-cdmx/Visual Assets/Banners/Templates/" \
-    -o "~/Dropbox/events/ia-cdmx/Visual Assets/Banners/Automated/" \
+python3 banner_cli.py -T ".../Templates/" -o ".../Automated/" \
     --title1 "Event" --speaker-name "Name" --date "Jan 15" --time "7 PM"
 ```
 
@@ -26,10 +49,18 @@ Note: `make lint`, `make format`, and `make test` are placeholders (not configur
 ## Architecture
 
 ```
+# API path (primary)
+banner_api_cli.py      # API CLI - event data + photo + logos -> full banner (see docs/api-cli.md)
+image_apis.py          # OpenAI (Responses API + image_generation tool) & Gemini providers; cover-fit
+prompts/               # Design-brief prompts injected into the API call
+tools/build_partner_strip.py  # Combine partner logos into one strip for reliable placement
+
+# GIMP path (legacy)
 banner_gui.py          # GUI entry point - launches Tkinter interface
 banner_cli.py          # CLI entry point - command-line arguments (see docs/cmdline.md)
 banner_gui_tk.py       # Tkinter GUI (1200+ lines) - form, file dialogs, config persistence
 banner_auto.py         # Shared generation logic - date parsing, file naming, GIMP execution
+                       # (the API CLI reuses its date-parsing / slug / naming helpers)
 gimp_scripts_gimp3.py  # Generates Python-Fu scripts for GIMP 3.0
 gimp_scripts/          # GIMP script templates (Jinja-style variable substitution)
 ```

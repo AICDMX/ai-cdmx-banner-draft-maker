@@ -1,11 +1,51 @@
 # AI Banner Generator (API) — `banner_api_cli.py`
 
-Generate a **complete** event banner with an image-generation API. You provide the event
-text, the speaker photo, and logos on the command line; the API produces the whole 16:9
-banner (1200×675). This is separate from the GIMP path (`banner_cli.py`), which is unchanged.
+**This is the primary, recommended way to make event banners.** You provide the event text,
+the speaker photo, and logos on the command line; an image-generation API (OpenAI
+`gpt-image-2` or Google Gemini) produces the whole banner — 16:9 (1200×675) or square 1:1
+(1080×1080).
 
-> This is the first "happy path". Background-art + GIMP compositing, selectable layouts,
-> square versions, multi-concept generation, etc. are tracked as GitHub issues.
+The older GIMP template path (`banner_cli.py`) still works and is kept for pixel-exact
+logos/photo, but the API path is what we use day to day.
+
+## What to pass in (AI CDMX events)
+
+The proven invocation — speaker photo + AI CDMX logo + the **combined partner-logo strip**:
+
+```bash
+python3 banner_api_cli.py -o ./out --backend openai \
+  --title1     "Eclipses en Agujeros Negros" \
+  --subtitle   "Detectándolos con Redes Neuronales y Machine Learning" \
+  --speaker-name  "Dr. Gustavo Magallanes-Guijón" \
+  --speaker-title "Senior Scientific Computing Architect" \
+  --date "Aug 18" --time "6 PM" \
+  --location "Presencial + YouTube en vivo · CDMX" \
+  --photo "/path/to/speaker.png" \
+  --logo  "AI CDMX=$HOME/Dropbox/events/ia-cdmx/Visual Assets/Logos/AI CDMX transparent logo (1024 × 1024 px).png" \
+  --logo  "partner logos in a row (UAM, Cultura UAM, Casa Rafael Galván, YouTube)=$HOME/Dropbox/events/ia-cdmx/Visual Assets/casa-rafael-galvan/partner-logos-strip-blanco.png"
+```
+
+Then make the square version from that banner so it stays on-series:
+
+```bash
+python3 banner_api_cli.py --square -o ./out --backend openai \
+  --from-banner ./out/2026-08-18-eclipses-e-openai-16x9.png \
+  --title1 "Eclipses en Agujeros Negros" \
+  --subtitle "Detectándolos con Redes Neuronales y Machine Learning" \
+  --speaker-name "Dr. Gustavo Magallanes-Guijón" \
+  --speaker-title "Senior Scientific Computing Architect" \
+  --date "Aug 18" --time "6 PM" --location "Presencial + YouTube en vivo · CDMX" \
+  --photo "/path/to/speaker.png" \
+  --logo  "AI CDMX=$HOME/Dropbox/events/ia-cdmx/Visual Assets/Logos/AI CDMX transparent logo (1024 × 1024 px).png" \
+  --logo  "partner logos in a row=$HOME/Dropbox/events/ia-cdmx/Visual Assets/casa-rafael-galvan/partner-logos-strip-blanco.png"
+```
+
+Key inputs, in short:
+- **Speaker photo** → `--photo` (used as a reference; model keeps the person)
+- **AI CDMX logo** → its own `--logo "AI CDMX=..."`
+- **All partner/venue logos** → the prebuilt strip `--logo "...=.../partner-logos-strip-blanco.png"`
+  (one tidy strip places far more reliably than separate marks — see *Partner logos* below)
+- Use `--dry-run` first to preview the prompt without spending an API call.
 
 ## Install
 

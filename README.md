@@ -4,16 +4,24 @@ A GUI tool for generating event banners from GIMP templates with automated text 
 
 ## Overview
 
-This tool provides a simple Python/Tkinter interface to:
-- Select from a directory of GIMP `.xcf` templates
-- Fill in event details (titles, speaker info, date/time, photo)
-- Automatically populate the template using headless GIMP
-- Export both `.xcf` (editable with layers) and `.png` (ready-to-use) versions
-- Open the result in GIMP for manual touch-ups
+There are two ways to generate banners:
 
-> **AI banner generator (no GIMP):** there is also an API-based path that generates a whole
-> banner from your event data + speaker photo + logos using OpenAI or Google Gemini image
-> models. See [docs/api-cli.md](docs/api-cli.md) (`banner_api_cli.py`).
+**1. AI image API — primary / recommended.** `banner_api_cli.py` takes your event data +
+speaker photo + logos and an image-generation model (OpenAI `gpt-image-2` or Google Gemini)
+produces the whole banner (16:9 or square 1:1). This is the day-to-day path.
+**→ See [docs/api-cli.md](docs/api-cli.md) for setup and exactly what to pass in.**
+
+```bash
+python3 banner_api_cli.py -o ./out --backend openai \
+  --title1 "Event Title" --speaker-name "Speaker" --date "Aug 18" --time "6 PM" \
+  --photo speaker.png \
+  --logo "AI CDMX=.../Logos/AI CDMX transparent logo (1024 × 1024 px).png" \
+  --logo "partners=.../casa-rafael-galvan/partner-logos-strip-blanco.png"
+```
+
+**2. GIMP templates — legacy / pixel-exact.** The original Python/Tkinter + headless-GIMP
+tool that populates `.xcf` templates and exports `.xcf` + `.jpg`. Use it when you need the
+exact logo/photo files placed precisely. The rest of this README covers this path.
 
 ## Prerequisites
 
