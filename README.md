@@ -11,6 +11,10 @@ This tool provides a simple Python/Tkinter interface to:
 - Export both `.xcf` (editable with layers) and `.png` (ready-to-use) versions
 - Open the result in GIMP for manual touch-ups
 
+> **AI banner generator (no GIMP):** there is also an API-based path that generates a whole
+> banner from your event data + speaker photo + logos using OpenAI or Google Gemini image
+> models. See [docs/api-cli.md](docs/api-cli.md) (`banner_api_cli.py`).
+
 ## Prerequisites
 
 - **Python**: 3.8 or higher

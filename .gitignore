@@ -26,6 +26,10 @@ env/
 ENV/
 .venv
 
+# Secrets (loaded via direnv); .env.example is committed
+.env
+.direnv/
+
 # uv
 .uv/
 uv.lock
@@ -43,8 +47,11 @@ Thumbs.db
 
 # Output files (generated banners)
 output/
+out/
 *.xcf
 *.png
+*.jpg
+*.jpeg
 
 # Logs
 *.log

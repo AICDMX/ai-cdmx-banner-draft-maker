@@ -6,6 +6,29 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = []
 
+# The GIMP path (banner-gui / banner_cli.py) stays zero-dependency.
+# The API path (banner_api_cli.py) needs these: pip install -e .[api]
+[project.optional-dependencies]
+api = [
+    "openai",
+    "google-genai",
+    "pillow",
+]
+
 [project.scripts]
 banner-gui = "banner_gui:main"
+banner-api = "banner_api_cli:main"
+
+# Flat-layout repo of standalone scripts: tell setuptools exactly which top-level
+# modules to install (auto-discovery is ambiguous with this many .py files).
+[tool.setuptools]
+py-modules = [
+    "banner_gui",
+    "banner_cli",
+    "banner_auto",
+    "banner_api_cli",
+    "banner_gui_tk",
+    "gimp_scripts_gimp3",
+    "image_apis",
+]
 
