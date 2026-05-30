@@ -25,7 +25,8 @@ python3 banner_api_cli.py -o ./out --backend openai \
   --logo  "partner logos in a row (UAM, Cultura UAM, Casa Rafael Galván, YouTube)=$HOME/Dropbox/events/ia-cdmx/Visual Assets/casa-rafael-galvan/partner-logos-strip-blanco.png"
 ```
 
-Then make the square version from that banner so it stays on-series:
+Then make the square version from that banner so it stays on-series. 
+**Note:** Pass all the same args (title, photo, logos) along with `--from-banner`:
 
 ```bash
 python3 banner_api_cli.py --square -o ./out --backend openai \
@@ -159,13 +160,26 @@ python3 banner_api_cli.py -o ./out --backend openai \
 
 `--square` produces a 1080×1080 **recomposition** (not a crop): bigger title, simplified
 layout, per the brief's square rules. Pair with `--from-banner` to feed the finished 16:9
-banner as a style reference so the square stays on-series:
+banner as a style reference so the square stays on-series.
+
+**IMPORTANT:** You MUST pass all the same metadata (title, subtitle, speaker, photo, logos) 
+along with `--from-banner`. The `--from-banner` provides style reference, but the logos and 
+other elements won't appear unless you explicitly pass them again:
 
 ```bash
 python3 banner_api_cli.py --square -o ./out --backend openai \
   --from-banner ./out/2026-08-18-...-16x9.png \
   --title1 "..." --speaker-name "..." --date "Aug 18" --photo speaker.png \
   --logo "AI CDMX=..." --logo "partners=.../partner-logos-strip-blanco.png"
+```
+
+**Wrong (logos will be missing):**
+```bash
+# ❌ This will produce a square banner WITHOUT logos
+python3 banner_api_cli.py --square -o ./out --backend openai \
+  --from-banner ./out/2026-08-18-...-16x9.png \
+  --title1 "..." --date "Aug 18"
+  # Missing: --photo, --logo flags
 ```
 
 ## Dry run (offline)
