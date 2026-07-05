@@ -11,10 +11,18 @@ Install with:  pip install -e .[api]   (openai, google-genai, pillow)
 API keys come from the environment (load them with direnv / a .env file):
     OPENAI_API_KEY
     GEMINI_API_KEY   (falls back to GOOGLE_API_KEY)
+
+OpenAI-compatible proxies are also supported:
+    OPENAI_BASE_URL  (full API base, usually ending in /v1)
+    CLIPROXY_API_KEY / CLIPROXY_BASE_URL
+
+For local Codex/Claude-style setups, CLIPROXY_* is also read from
+``~/.config/claude-aliases/env`` when it is not already in the environment.
 """
 
 import base64
 import os
+import shlex
 from pathlib import Path
 
 # Default models (see docs/api-cli.md and the API packet).
@@ -33,6 +41,50 @@ class ProviderError(RuntimeError):
     """Raised for missing SDKs, missing API keys, or empty API responses."""
 
 
+CLIPROXY_ENV_FILE = Path.home() / ".config" / "claude-aliases" / "env"
+
+
+def _read_shell_env_file(path=CLIPROXY_ENV_FILE) -> dict:
+    """Read simple KEY=value / export KEY=value lines from a shell env file."""
+    values = {}
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            continue
+        name, raw_value = line.split("=", 1)
+        name = name.strip()
+        if not name or not (name[0].isalpha() or name[0] == "_"):
+            continue
+        if not all(ch.isalnum() or ch == "_" for ch in name):
+            continue
+        try:
+            parts = shlex.split(raw_value, posix=True)
+            value = parts[0] if parts else ""
+        except ValueError:
+            value = raw_value.strip().strip('"\'')
+        values[name] = value
+    return values
+
+
+def _config_value(name: str, file_values=None) -> str:
+    """Return an environment value, falling back to the local cliproxy env file."""
+    value = os.environ.get(name)
+    if value:
+        return value
+    if file_values is None:
+        file_values = _read_shell_env_file()
+    return file_values.get(name, "")
+
+
 def _require_key(*names: str) -> str:
     """Return the first set environment variable among ``names``."""
     for name in names:
@@ -43,6 +95,53 @@ def _require_key(*names: str) -> str:
     raise ProviderError(
         f"No API key found. Set {joined} in your environment "
         f"(e.g. add it to .env and run `direnv allow`)."
+    )
+
+
+def _normalize_base_url(url: str, *, append_v1_if_no_path=False) -> str:
+    """Return a base URL suitable for the OpenAI SDK."""
+    url = (url or "").strip().rstrip("/")
+    if append_v1_if_no_path and url and "://" in url:
+        after_scheme = url.split("://", 1)[1]
+        if "/" not in after_scheme:
+            url = f"{url}/v1"
+    return url
+
+
+def _openai_client_kwargs() -> dict:
+    """Build OpenAI SDK client kwargs from env or the local cliproxy config file.
+
+    Direct OpenAI remains the default when OPENAI_API_KEY is set. If it is not set,
+    fall back to CLIPROXY_API_KEY and CLIPROXY_BASE_URL, including values from
+    ~/.config/claude-aliases/env. OPENAI_BASE_URL / OPENAI_API_BASE can be used
+    with either key source to point at any OpenAI-compatible endpoint.
+    """
+    file_values = _read_shell_env_file()
+
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    explicit_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")
+
+    if openai_key:
+        kwargs = {"api_key": openai_key}
+        if explicit_base_url:
+            kwargs["base_url"] = _normalize_base_url(explicit_base_url)
+        return kwargs
+
+    cliproxy_key = _config_value("CLIPROXY_API_KEY", file_values)
+    if cliproxy_key:
+        base_url = explicit_base_url or _config_value("CLIPROXY_BASE_URL", file_values)
+        kwargs = {"api_key": cliproxy_key}
+        if base_url:
+            kwargs["base_url"] = _normalize_base_url(
+                base_url,
+                append_v1_if_no_path=(base_url == _config_value("CLIPROXY_BASE_URL", file_values)),
+            )
+        return kwargs
+
+    raise ProviderError(
+        "No OpenAI-compatible API key found. Set OPENAI_API_KEY in your environment, "
+        "or set CLIPROXY_API_KEY (optionally CLIPROXY_BASE_URL) in the environment "
+        f"or {CLIPROXY_ENV_FILE}."
     )
 
 
@@ -65,7 +164,7 @@ def generate_openai(prompt, image_paths, out_path, *,
             "The 'openai' package is not installed. Run: pip install -e .[api]"
         ) from exc
 
-    client = OpenAI(api_key=_require_key("OPENAI_API_KEY"))
+    client = OpenAI(**_openai_client_kwargs())
 
     content = [{"type": "input_text", "text": prompt}]
     for path in image_paths:

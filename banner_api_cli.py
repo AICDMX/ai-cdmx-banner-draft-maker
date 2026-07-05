@@ -14,6 +14,9 @@ Usage:
 
 API keys come from the environment (use direnv / .env):
     OPENAI_API_KEY, GEMINI_API_KEY (or GOOGLE_API_KEY)
+OpenAI-compatible custom endpoints are supported with OPENAI_BASE_URL; if
+OPENAI_API_KEY is unset, CLIPROXY_API_KEY / CLIPROXY_BASE_URL are also read from
+~/.config/claude-aliases/env.
 
 See docs/api-cli.md for full documentation.
 """
@@ -142,14 +145,14 @@ Examples:
   %(prog)s --dry-run -o ./out --title1 "Café con IA" --speaker-name "Jane Doe" \\
            --date "Jun 12" --photo jane.jpg --logo aicdmx.png
 
-  # Generate with Gemini (default backend, native 16:9)
+  # Generate with OpenAI (default backend)
   %(prog)s -o ./out --title1 "Café con IA" --subtitle "An evening with..." \\
            --speaker-name "Jane Doe" --speaker-title "AI Researcher" \\
            --date "Jun 12" --time "7 PM" --location "CDMX" \\
            --photo jane.jpg --logo aicdmx.png
 
-  # Generate with OpenAI
-  %(prog)s --backend openai -o ./out --title1 "Café con IA" \\
+  # Generate with Gemini
+  %(prog)s --backend gemini -o ./out --title1 "Café con IA" \\
            --speaker-name "Jane Doe" --date "Jun 12" --photo jane.jpg
 
 See docs/api-cli.md for full documentation.

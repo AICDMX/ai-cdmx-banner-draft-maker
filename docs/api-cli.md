@@ -56,7 +56,7 @@ The API path needs extra packages (the GIMP path stays zero-dependency):
 pip install -e .[api]      # openai, google-genai, pillow
 ```
 
-## API keys (direnv)
+## API keys and custom endpoints (direnv / cliproxy)
 
 Keys are read from the environment:
 
@@ -68,10 +68,29 @@ Setup with [direnv](https://direnv.net/):
 ```bash
 cp .env.example .env        # then edit .env with your real keys
 direnv allow                # loads .env into the shell in this directory
-echo $GEMINI_API_KEY        # verify
+echo $OPENAI_API_KEY        # verify direct OpenAI
+echo $GEMINI_API_KEY        # verify Gemini
 ```
 
 `.env` is gitignored; `.envrc` and `.env.example` are committed.
+
+### OpenAI-compatible proxy / custom URL
+
+The OpenAI backend also works with OpenAI-compatible endpoints:
+
+- `OPENAI_BASE_URL` or `OPENAI_API_BASE` — full API base URL for the OpenAI SDK
+  (usually ending in `/v1`), used with `OPENAI_API_KEY`.
+- If `OPENAI_API_KEY` is unset, it falls back to `CLIPROXY_API_KEY` and
+  `CLIPROXY_BASE_URL` from the environment.
+- If those `CLIPROXY_*` variables are not in the environment, they are loaded from
+  `~/.config/claude-aliases/env` when that file exists. This matches the local `co`
+  Codex/cliproxy wrapper setup.
+- The committed `.envrc` also sources `~/.config/claude-aliases/env` when present and
+  maps it to `OPENAI_API_KEY` / `OPENAI_BASE_URL`, so an interactive direnv shell uses
+  the same key and endpoint as `co` by default.
+
+For the local cliproxy env file, `CLIPROXY_BASE_URL=http://forgejo-cliproxy:8317` is
+accepted and normalized to `http://forgejo-cliproxy:8317/v1` for the OpenAI SDK.
 
 ## Usage
 
@@ -102,7 +121,7 @@ python3 banner_api_cli.py -o ./out \
 | `--location` | no | Location / format |
 | `--photo` | no | Speaker photo (used as a reference image) |
 | `--logo` | no | Logo image (repeatable: AI CDMX + partners) |
-| `--backend` | no | `gemini` (default) or `openai` |
+| `--backend` | no | `openai` (default) or `gemini` |
 | `--model` | no | Override the backend's default model |
 | `--dry-run` | no | Print the assembled prompt/refs/output path; no API call, no key |
 | `--quiet`, `-q` | no | Suppress non-error output |
